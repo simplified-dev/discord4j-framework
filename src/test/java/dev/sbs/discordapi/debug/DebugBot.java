@@ -1,20 +1,18 @@
 package dev.sbs.discordapi.debug;
 
-import dev.sbs.api.SimplifiedApi;
 import dev.sbs.discordapi.DiscordBot;
 import dev.sbs.discordapi.command.DiscordCommand;
 import dev.sbs.discordapi.handler.DiscordConfig;
 import dev.simplified.reflection.Reflection;
+import dev.simplified.util.Logging;
 import dev.simplified.util.NumberUtil;
 import dev.simplified.util.SystemUtil;
-import discord4j.core.GatewayDiscordClient;
 import discord4j.core.object.presence.ClientActivity;
 import discord4j.core.object.presence.ClientPresence;
 import discord4j.core.shard.MemberRequestFilter;
 import discord4j.gateway.intent.Intent;
 import discord4j.gateway.intent.IntentSet;
 import discord4j.rest.util.AllowedMentions;
-import dev.simplified.util.Logging;
 import org.jetbrains.annotations.NotNull;
 
 public final class DebugBot extends DiscordBot {
@@ -43,11 +41,6 @@ public final class DebugBot extends DiscordBot {
 
         DebugBot debugBot = new DebugBot(discordConfig);
         debugBot.start();
-    }
-
-    @Override
-    protected void onGatewayConnected(@NotNull GatewayDiscordClient gatewayDiscordClient) {
-        SimplifiedApi.getKeyManager().add(SystemUtil.getEnvPair("HYPIXEL_API_KEY"));
     }
 
 }
