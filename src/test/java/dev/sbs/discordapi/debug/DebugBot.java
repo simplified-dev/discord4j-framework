@@ -1,12 +1,12 @@
 package dev.sbs.discordapi.debug;
 
 import dev.sbs.api.SimplifiedApi;
-import dev.sbs.api.reflection.Reflection;
-import dev.sbs.api.util.NumberUtil;
-import dev.sbs.api.util.SystemUtil;
 import dev.sbs.discordapi.DiscordBot;
 import dev.sbs.discordapi.command.DiscordCommand;
 import dev.sbs.discordapi.handler.DiscordConfig;
+import dev.simplified.reflection.Reflection;
+import dev.simplified.util.NumberUtil;
+import dev.simplified.util.SystemUtil;
 import discord4j.core.GatewayDiscordClient;
 import discord4j.core.object.presence.ClientActivity;
 import discord4j.core.object.presence.ClientPresence;
@@ -14,7 +14,7 @@ import discord4j.core.shard.MemberRequestFilter;
 import discord4j.gateway.intent.Intent;
 import discord4j.gateway.intent.IntentSet;
 import discord4j.rest.util.AllowedMentions;
-import org.apache.logging.log4j.Level;
+import dev.simplified.util.Logging;
 import org.jetbrains.annotations.NotNull;
 
 public final class DebugBot extends DiscordBot {
@@ -38,7 +38,7 @@ public final class DebugBot extends DiscordBot {
             .withDisabledIntents(IntentSet.of(Intent.GUILD_PRESENCES))
             .withClientPresence(ClientPresence.doNotDisturb(ClientActivity.watching("debugging")))
             .withMemberRequestFilter(MemberRequestFilter.all())
-            .withLogLevel(Level.INFO)
+            .withLogLevel(Logging.Level.INFO)
             .build();
 
         DebugBot debugBot = new DebugBot(discordConfig);

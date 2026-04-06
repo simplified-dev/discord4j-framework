@@ -1,15 +1,14 @@
 package dev.sbs.discordapi.handler;
 
-import dev.sbs.api.collection.concurrent.Concurrent;
-import dev.sbs.api.collection.concurrent.ConcurrentSet;
-import dev.sbs.api.io.yaml.annotation.Flag;
-import dev.sbs.api.persistence.JpaConfig;
-import dev.sbs.api.reflection.Reflection;
-import dev.sbs.api.reflection.info.ResourceInfo;
-import dev.sbs.api.util.builder.BuildFlag;
-import dev.sbs.api.util.builder.ClassBuilder;
 import dev.sbs.discordapi.command.DiscordCommand;
 import dev.sbs.discordapi.listener.DiscordListener;
+import dev.simplified.collection.Concurrent;
+import dev.simplified.collection.ConcurrentSet;
+import dev.simplified.persistence.JpaConfig;
+import dev.simplified.reflection.Reflection;
+import dev.simplified.reflection.builder.BuildFlag;
+import dev.simplified.reflection.info.ResourceInfo;
+import dev.simplified.yaml.annotation.Flag;
 import discord4j.core.event.domain.Event;
 import discord4j.core.object.presence.ClientPresence;
 import discord4j.core.shard.MemberRequestFilter;
@@ -19,7 +18,7 @@ import discord4j.rest.util.AllowedMentions;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import org.apache.logging.log4j.Level;
+import dev.simplified.util.Logging;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -46,7 +45,7 @@ public final class DiscordConfig {
     @Getter(AccessLevel.NONE)
     private final @NotNull Function<ShardInfo, ClientPresence> clientPresence;
     private final @NotNull MemberRequestFilter memberRequestFilter;
-    private final @NotNull Level logLevel;
+    private final @NotNull Logging.Level logLevel;
 
     public static @NotNull Builder builder() {
         return new Builder();
@@ -56,7 +55,7 @@ public final class DiscordConfig {
         return this.clientPresence.apply(shardInfo);
     }
 
-    public static class Builder implements ClassBuilder<DiscordConfig> {
+    public static class Builder {
 
         // Settings
         @BuildFlag(nonNull = true)
@@ -81,7 +80,7 @@ public final class DiscordConfig {
         @BuildFlag(nonNull = true)
         private MemberRequestFilter memberRequestFilter = MemberRequestFilter.all();
         @BuildFlag(nonNull = true)
-        private Level logLevel = Level.WARN;
+        private Logging.Level logLevel = Logging.Level.WARN;
 
         public Builder withAllowedMentions(@NotNull AllowedMentions allowedMentions) {
             this.allowedMentions = allowedMentions;
@@ -182,7 +181,7 @@ public final class DiscordConfig {
             return this;
         }
 
-        public Builder withLogLevel(@NotNull Level logLevel) {
+        public Builder withLogLevel(@NotNull Logging.Level logLevel) {
             this.logLevel = logLevel;
             return this;
         }
@@ -210,7 +209,6 @@ public final class DiscordConfig {
             return this;
         }
 
-        @Override
         public @NotNull DiscordConfig build() {
             Reflection.validateFlags(this);
 

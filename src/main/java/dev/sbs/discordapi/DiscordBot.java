@@ -1,13 +1,6 @@
 package dev.sbs.discordapi;
 
 import dev.sbs.api.SimplifiedApi;
-import dev.sbs.api.collection.concurrent.Concurrent;
-import dev.sbs.api.collection.concurrent.ConcurrentList;
-import dev.sbs.api.persistence.JpaSession;
-import dev.sbs.api.reflection.Reflection;
-import dev.sbs.api.scheduler.Scheduler;
-import dev.sbs.api.util.LogUtil;
-import dev.sbs.api.util.SystemUtil;
 import dev.sbs.discordapi.command.DiscordCommand;
 import dev.sbs.discordapi.command.Structure;
 import dev.sbs.discordapi.command.parameter.Argument;
@@ -50,6 +43,13 @@ import dev.sbs.discordapi.listener.message.ReactionRemoveListener;
 import dev.sbs.discordapi.response.Response;
 import dev.sbs.discordapi.response.page.FormPage;
 import dev.sbs.discordapi.response.page.Page;
+import dev.simplified.collection.Concurrent;
+import dev.simplified.collection.ConcurrentList;
+import dev.simplified.persistence.JpaSession;
+import dev.simplified.reflection.Reflection;
+import dev.simplified.scheduler.Scheduler;
+import dev.simplified.util.Logging;
+import dev.simplified.util.SystemUtil;
 import discord4j.common.util.Snowflake;
 import discord4j.core.DiscordClient;
 import discord4j.core.DiscordClientBuilder;
@@ -144,7 +144,7 @@ public abstract class DiscordBot {
         this.exceptionHandler = this.buildExceptionHandler();
         this.emojiHandler = new EmojiHandler(this);
         this.responseHandler = new ResponseHandler();
-        LogUtil.setRootLevel(this.getConfig().getLogLevel());
+        Logging.setRootLevel(this.getConfig().getLogLevel());
 
         this.commandHandler = CommandHandler.builder(this)
             .withCommands(this.getConfig().getCommands())
