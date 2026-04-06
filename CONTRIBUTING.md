@@ -50,25 +50,14 @@ project follows.
    cd discord-api
    ```
 
-2. **Clone the `api` module alongside** (for local development)
-
-   This module depends on the [api](https://github.com/SkyBlock-Simplified/api)
-   module (`dev.sbs:api:0.1.0`). For local development, clone the `api`
-   repository alongside this one and use a Gradle composite build.
-
-   ```bash
-   cd ..
-   git clone https://github.com/SkyBlock-Simplified/api.git
-   ```
-
-3. **Build the project**
+2. **Build the project**
 
    ```bash
    cd discord-api
    ./gradlew build
    ```
 
-4. **Open in IntelliJ IDEA**
+3. **Open in IntelliJ IDEA**
 
    Open the project root as a Gradle project. Ensure the Lombok plugin is
    installed and annotation processing is enabled.

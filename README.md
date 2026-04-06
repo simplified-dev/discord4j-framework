@@ -61,12 +61,12 @@ discovery.
 ### Installation
 
 > [!NOTE]
-> This module depends on the [api](../api) module, declared as a Maven
-> coordinate (`dev.sbs:api:0.1.0`). For local development you can clone both
-> repositories side by side and use a Gradle composite build.
+> This module is standalone. All shared infrastructure (collections, scheduler,
+> client, reflection, etc.) is pulled directly from the
+> [simplified-dev](https://github.com/simplified-dev) library set via JitPack
+> coordinates declared in `build.gradle.kts`.
 
 ```bash
-git clone https://github.com/SkyBlock-Simplified/api.git
 git clone https://github.com/SkyBlock-Simplified/discord-api.git
 cd discord-api
 ```

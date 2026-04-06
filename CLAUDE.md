@@ -162,7 +162,7 @@ listener/lifecycle/       — DisconnectListener, GuildCreateListener
 
 - **`DiscordReference`** — base class for anything needing bot access; provides `getDiscordBot()`, `getEmoji()`, `isDeveloper()`, permission helpers.
 - **`Component.Type`** enum maps to Discord's integer component type IDs and tracks which types require the Components V2 flag.
-- **`api` dependency** — declared as a Maven coordinate (`dev.sbs:api:0.1.0`) in `build.gradle.kts`.
+- **Library dependencies** — declared directly as JitPack coordinates (`com.github.simplified-dev:*:master-SNAPSHOT`) in `build.gradle.kts`. The module is standalone and does not depend on a SkyBlock-Simplified `api` module.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
