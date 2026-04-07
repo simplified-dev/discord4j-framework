@@ -1,0 +1,21 @@
+package dev.sbs.discordapi.event.lifecycle;
+
+import dev.sbs.discordapi.DiscordBot;
+import dev.sbs.discordapi.event.BotEvent;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import org.jetbrains.annotations.NotNull;
+
+/**
+ * Emitted by {@link DiscordBot} when the Discord gateway has disconnected,
+ * mirroring Discord4J's gateway {@code DisconnectEvent} as a bot-internal
+ * lifecycle notification.
+ */
+@Getter
+@RequiredArgsConstructor
+public final class GatewayDisconnectBotEvent implements BotEvent {
+
+    /** The bot instance that emitted this event. */
+    private final @NotNull DiscordBot discordBot;
+
+}

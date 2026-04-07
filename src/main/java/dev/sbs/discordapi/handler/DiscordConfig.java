@@ -1,6 +1,8 @@
 package dev.sbs.discordapi.handler;
 
 import dev.sbs.discordapi.command.DiscordCommand;
+import dev.sbs.discordapi.event.BotEvent;
+import dev.sbs.discordapi.listener.BotEventListener;
 import dev.sbs.discordapi.listener.DiscordListener;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentSet;
@@ -35,6 +37,7 @@ public final class DiscordConfig {
     @Flag(secure = true)
     private final @NotNull Optional<String> sentryDsn;
     private final ConcurrentSet<Class<? extends DiscordListener>> listeners;
+    private final ConcurrentSet<Class<? extends BotEventListener>> botEventListeners;
     private final ConcurrentSet<Class<DiscordCommand>> commands;
     private final ConcurrentSet<ResourceInfo> emojis;
     private final @NotNull AllowedMentions allowedMentions;
@@ -65,6 +68,7 @@ public final class DiscordConfig {
 
         // Collections
         private ConcurrentSet<Class<? extends DiscordListener>> listeners = Concurrent.newSet();
+        private ConcurrentSet<Class<? extends BotEventListener>> botEventListeners = Concurrent.newSet();
         private ConcurrentSet<Class<DiscordCommand>> commands = Concurrent.newSet();
         private ConcurrentSet<ResourceInfo> emojis = Concurrent.newSet();
         @BuildFlag(nonNull = true)
@@ -155,6 +159,11 @@ public final class DiscordConfig {
                     .filterPackage(packagePath)
                     .getSubtypesOf(DiscordListener.class)
             );
+            this.botEventListeners.addAll(
+                Reflection.getResources()
+                    .filterPackage(packagePath)
+                    .getSubtypesOf(BotEventListener.class)
+            );
             return this;
         }
 
@@ -165,6 +174,16 @@ public final class DiscordConfig {
 
         public Builder withListeners(@NotNull Iterable<Class<? extends DiscordListener<? extends Event>>> listeners) {
             listeners.forEach(this.listeners::add);
+            return this;
+        }
+
+        public Builder withBotEventListeners(@NotNull Class<? extends BotEventListener<? extends BotEvent>>... botEventListeners) {
+            this.botEventListeners.addAll(botEventListeners);
+            return this;
+        }
+
+        public Builder withBotEventListeners(@NotNull Iterable<Class<? extends BotEventListener<? extends BotEvent>>> botEventListeners) {
+            botEventListeners.forEach(this.botEventListeners::add);
             return this;
         }
 
@@ -205,6 +224,7 @@ public final class DiscordConfig {
                 this.logChannelId,
                 this.sentryDsn,
                 this.listeners.toUnmodifiableSet(),
+                this.botEventListeners.toUnmodifiableSet(),
                 this.commands.toUnmodifiableSet(),
                 this.emojis.toUnmodifiableSet(),
                 this.allowedMentions,

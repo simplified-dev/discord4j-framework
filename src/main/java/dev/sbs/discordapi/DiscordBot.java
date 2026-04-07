@@ -7,6 +7,10 @@ import dev.sbs.discordapi.command.parameter.Parameter;
 import dev.sbs.discordapi.component.interaction.TextInput;
 import dev.sbs.discordapi.context.capability.ExceptionContext;
 import dev.sbs.discordapi.context.command.AutoCompleteContext;
+import dev.sbs.discordapi.event.BotEvent;
+import dev.sbs.discordapi.event.lifecycle.ClientCreatedBotEvent;
+import dev.sbs.discordapi.event.lifecycle.GatewayConnectBotEvent;
+import dev.sbs.discordapi.event.lifecycle.GatewayDisconnectBotEvent;
 import dev.sbs.discordapi.context.command.MessageCommandContext;
 import dev.sbs.discordapi.context.command.SlashCommandContext;
 import dev.sbs.discordapi.context.command.UserCommandContext;
@@ -28,6 +32,7 @@ import dev.sbs.discordapi.handler.response.CachedResponse;
 import dev.sbs.discordapi.handler.response.ResponseFollowup;
 import dev.sbs.discordapi.handler.response.ResponseHandler;
 import dev.sbs.discordapi.handler.shard.ShardHandler;
+import dev.sbs.discordapi.listener.BotEventListener;
 import dev.sbs.discordapi.listener.DiscordListener;
 import dev.sbs.discordapi.listener.command.AutoCompleteListener;
 import dev.sbs.discordapi.listener.command.MessageCommandListener;
@@ -55,6 +60,7 @@ import discord4j.core.GatewayDiscordClient;
 import discord4j.core.event.EventDispatcher;
 import discord4j.core.event.domain.Event;
 import discord4j.core.event.domain.lifecycle.ConnectEvent;
+import discord4j.core.event.domain.lifecycle.DisconnectEvent;
 import discord4j.core.object.entity.Guild;
 import discord4j.core.object.entity.channel.MessageChannel;
 import discord4j.discordjson.json.UserData;
@@ -62,12 +68,14 @@ import discord4j.rest.request.RouteMatcher;
 import discord4j.rest.response.ResponseFunction;
 import discord4j.rest.route.Routes;
 import io.netty.channel.unix.Errors;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.extern.log4j.Log4j2;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.NonNull;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.util.retry.Retry;
 
 import java.lang.reflect.Modifier;
@@ -123,6 +131,13 @@ public abstract class DiscordBot {
     private final @NotNull Scheduler scheduler = new Scheduler();
     private final @NotNull DiscordConfig config;
 
+    /**
+     * Replay sink for bot-internal lifecycle events. Late subscribers (registered
+     * inside {@link #connect()}) receive events emitted earlier from {@link #login()}.
+     */
+    @Getter(AccessLevel.NONE)
+    private final @NotNull Sinks.Many<BotEvent> botEventSink = Sinks.many().replay().limit(16);
+
     // Handlers
     private final @NotNull ExceptionHandler exceptionHandler;
     private final @NotNull EmojiHandler emojiHandler;
@@ -155,10 +170,13 @@ public abstract class DiscordBot {
      *   <li>Initializes the Discord Gateway with specified intents, client presence, and member request filters.</li>
      *   <li>Handles the {@link ConnectEvent} to initialize additional components and perform post-connection setup:
      *     <ul>
-     *       <li>Calls the {@code onGatewayConnected} method upon a successful connection.</li>
+     *       <li>Emits a {@link GatewayConnectBotEvent} on the internal bot event stream upon a successful connection.</li>
      *       <li>Schedules a periodic task to clean up inactive cached responses and update message states.</li>
      *       <li>Registers event listeners dynamically by scanning resources and loading implementations of
-     *           {@code DiscordListener} or user-defined listeners from the configuration.</li>
+     *           {@link DiscordListener} and {@link BotEventListener}, including any user-defined listeners from
+     *           the configuration.</li>
+     *       <li>Subscribes a bridge for Discord4J's {@link DisconnectEvent} that emits a
+     *           {@link GatewayDisconnectBotEvent} on the internal bot event stream.</li>
      *       <li>Registers and uploads custom emojis using the configured emoji handler.</li>
      *       <li>Updates global application commands through the command handler.</li>
      *     </ul>
@@ -184,7 +202,7 @@ public abstract class DiscordBot {
                 .map(ConnectEvent::getClient)
                 .flatMap(gatewayDiscordClient -> {
                     log.info("Gateway Connected");
-                    this.onGatewayConnected(gatewayDiscordClient);
+                    this.emitBotEvent(new GatewayConnectBotEvent(this, gatewayDiscordClient));
 
                     log.info("Scheduling Cache Cleaner");
                     this.scheduler.scheduleAsync(() -> this.responseHandler.matchAll(CachedResponse::notActive).forEach(entry -> {
@@ -222,6 +240,25 @@ public abstract class DiscordBot {
                         .stream()
                         .map(listenerClass -> this.createListener(eventDispatcher, listenerClass))
                         .forEach(eventListeners::add);
+
+                    Reflection.getResources()
+                        .filterPackage(BotEventListener.class)
+                        .getSubtypesOf(BotEventListener.class)
+                        .stream()
+                        .filter(listenerClass -> !Modifier.isAbstract(listenerClass.getModifiers()))
+                        .map(this::createBotEventListener)
+                        .forEach(eventListeners::add);
+
+                    this.getConfig()
+                        .getBotEventListeners()
+                        .stream()
+                        .map(this::createBotEventListener)
+                        .forEach(eventListeners::add);
+
+                    eventListeners.add(eventDispatcher.on(DisconnectEvent.class, event -> {
+                        this.emitBotEvent(new GatewayDisconnectBotEvent(this));
+                        return Mono.empty();
+                    }));
 
                     log.info("Logged in as {}", this.getSelf().username());
                     return Mono.when(eventListeners)
@@ -272,7 +309,7 @@ public abstract class DiscordBot {
             .blockOptional()
             .orElseThrow(() -> new DiscordClientException("Unable to locate self."));
 
-        this.onClientCreated(this.client);
+        this.emitBotEvent(new ClientCreatedBotEvent(this, this.client));
     }
 
     public final @NotNull DiscordClient getClient() {
@@ -321,6 +358,47 @@ public abstract class DiscordBot {
     }
 
     /**
+     * Instantiates the given {@link BotEventListener} subclass and subscribes it
+     * to the internal {@link #botEventSink bot event stream}, filtering by the
+     * listener's resolved event type and logging any errors locally.
+     *
+     * @param <T> the bot event type
+     * @param listenerClass the listener class to instantiate and subscribe
+     * @return a publisher completing when the underlying sink completes
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    private <T extends BotEvent> @NonNull Publisher<Void> createBotEventListener(@NotNull Class<? extends BotEventListener> listenerClass) {
+        BotEventListener<T> instance = (BotEventListener<T>) new Reflection<>(listenerClass).newInstance(this);
+        return this.botEventSink.asFlux()
+            .ofType(instance.getEventClass())
+            .flatMap(event -> Mono.from(instance.apply(event))
+                .onErrorResume(throwable -> {
+                    log.error(
+                        "{} threw while handling {}",
+                        instance.getTitle(),
+                        event.getClass().getSimpleName(),
+                        throwable
+                    );
+                    return Mono.empty();
+                }))
+            .then();
+    }
+
+    /**
+     * Pushes the given event onto the internal bot event stream, where it will
+     * be delivered to every subscribed {@link BotEventListener} whose declared
+     * event type is assignable from {@code event}.
+     *
+     * @param event the event to emit
+     */
+    private void emitBotEvent(@NotNull BotEvent event) {
+        Sinks.EmitResult result = this.botEventSink.tryEmitNext(event);
+
+        if (result.isFailure())
+            log.warn("Failed to emit bot event {}: {}", event.getClass().getSimpleName(), result);
+    }
+
+    /**
      * Builds the exception handler chain based on configuration. Adds a
      * {@link SentryExceptionHandler} if a Sentry DSN is available (config
      * takes priority over {@code SENTRY_DSN} environment variable), and a
@@ -355,7 +433,7 @@ public abstract class DiscordBot {
      *     <li>Creates and configures the {@link DiscordClient} with the bot token, allowed mentions,
      *         response suppression rules, and network retry logic.</li>
      *     <li>Fetches the bot's own {@link UserData} from Discord.</li>
-     *     <li>Invokes the {@link #onClientCreated(DiscordClient)} hook.</li>
+     *     <li>Emits a {@link ClientCreatedBotEvent} on the internal bot event stream.</li>
      * </ul>
      * <p>
      * <b>Phase 2 - Gateway ({@link #connect()})</b>
@@ -363,9 +441,10 @@ public abstract class DiscordBot {
      *     <li>Opens a Gateway connection with the configured intents, presence, and member request filter.</li>
      *     <li>On the initial {@link ConnectEvent}:
      *     <ul>
-     *         <li>Invokes the {@link #onGatewayConnected(GatewayDiscordClient)} hook.</li>
+     *         <li>Emits a {@link GatewayConnectBotEvent} on the internal bot event stream.</li>
      *         <li>Schedules a periodic cache cleaner that removes inactive {@link CachedResponse} entries.</li>
-     *         <li>Discovers and registers all {@link DiscordListener} implementations.</li>
+     *         <li>Discovers and registers all {@link DiscordListener} and {@link BotEventListener} implementations.</li>
+     *         <li>Subscribes a bridge for Discord4J's {@link DisconnectEvent} that emits a {@link GatewayDisconnectBotEvent}.</li>
      *         <li>Syncs custom emojis via the {@link EmojiHandler}.</li>
      *         <li>Updates global application commands via the {@link CommandHandler}.</li>
      *     </ul></li>
@@ -381,13 +460,5 @@ public abstract class DiscordBot {
         this.login();
         this.connect();
     }
-
-    @SuppressWarnings("unused")
-    protected void onClientCreated(@NotNull DiscordClient discordClient) { }
-
-    @SuppressWarnings("unused")
-    protected void onGatewayConnected(@NotNull GatewayDiscordClient gatewayDiscordClient) { }
-
-    protected void onGatewayDisconnect() { }
 
 }

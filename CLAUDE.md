@@ -123,9 +123,15 @@ Contexts provide: `reply()`, `edit()`, `followup()`, `presentModal()`, `deleteFo
 
 ### Listener System
 
-All listeners extend `DiscordListener<T extends Event>` and are auto-registered via classpath scanning of the `dev.sbs.discordapi.listener` package. Additional listeners can be registered through `DiscordConfig.Builder.withListeners()`.
+There are two parallel listener hierarchies, both auto-registered via classpath scanning of the `dev.sbs.discordapi.listener` package:
+
+- **`DiscordListener<T extends discord4j.core.event.domain.Event>`** — handles Discord4J gateway events. Subscribed to Discord4J's `EventDispatcher`. Errors are routed through the `ExceptionHandler` chain.
+- **`BotEventListener<T extends BotEvent>`** — handles bot-internal events emitted by `DiscordBot` itself (lifecycle hooks, future custom events). Subscribed to a `Sinks.Many<BotEvent>` replay sink owned by `DiscordBot` (last 16 events replayed to late subscribers, so listeners registered inside `connect()` still receive events emitted during `login()`). Errors are logged locally.
+
+Additional listeners of either type can be registered through `DiscordConfig.Builder.withListeners()` (Discord4J events) or `withBotEventListeners()` (bot events).
 
 ```
+listener/                 — DiscordListener, BotEventListener (base classes)
 listener/command/         — SlashCommandListener, UserCommandListener,
                             MessageCommandListener, AutoCompleteListener
 listener/component/       — ComponentListener, ButtonListener, SelectMenuListener,
@@ -133,7 +139,17 @@ listener/component/       — ComponentListener, ButtonListener, SelectMenuListe
                             RadioGroupListener
 listener/message/         — MessageCreateListener, MessageDeleteListener,
                             ReactionListener, ReactionAddListener, ReactionRemoveListener
-listener/lifecycle/       — DisconnectListener, GuildCreateListener
+listener/lifecycle/       — DisconnectListener (BotEventListener), GuildCreateListener
+```
+
+#### Bot Event Hierarchy
+
+`dev.sbs.discordapi.event` houses internal events that are emitted by `DiscordBot` and consumed by `BotEventListener` subclasses. Lifecycle hooks (`onClientCreated`, `onGatewayConnected`, `onGatewayDisconnect`) are NOT exposed as protected methods on `DiscordBot` — `DiscordBot` is the single bridge that translates Discord4J gateway events into bot events, and listeners are the only extension point.
+
+```
+event/                    — BotEvent (marker interface)
+event/lifecycle/          — ClientCreatedBotEvent, GatewayConnectBotEvent,
+                            GatewayDisconnectBotEvent
 ```
 
 ### Handler Classes
