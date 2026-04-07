@@ -3,7 +3,7 @@ package dev.sbs.discordapi.context.message;
 import dev.sbs.discordapi.DiscordBot;
 import dev.sbs.discordapi.context.scope.MessageContext;
 import dev.sbs.discordapi.handler.response.CachedResponse;
-import dev.sbs.discordapi.handler.response.ResponseFollowup;
+import dev.sbs.discordapi.handler.response.CachedResponse;
 import dev.sbs.discordapi.response.Emoji;
 import dev.sbs.discordapi.response.Response;
 import discord4j.common.util.Snowflake;
@@ -192,7 +192,7 @@ public interface ReactionContext extends MessageContext<ReactionUserEmojiEvent> 
         @NotNull Response cachedMessage,
         @NotNull Emoji emoji,
         @NotNull Type type,
-        @NotNull Optional<ResponseFollowup> followup
+        @NotNull Optional<CachedResponse> followup
     ) {
         return new Impl(
             discordBot,
@@ -240,7 +240,7 @@ public interface ReactionContext extends MessageContext<ReactionUserEmojiEvent> 
         /**
          * The default followup associated with this context, if any.
          */
-        private final @NotNull Optional<ResponseFollowup> followup;
+        private final @NotNull Optional<CachedResponse> followup;
 
     }
 

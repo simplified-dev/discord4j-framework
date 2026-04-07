@@ -710,7 +710,7 @@ public final class Response {
         }
 
         /**
-         * Sets the time in seconds for the {@link Response} to live in {@link DiscordBot#getResponseHandler()}.
+         * Sets the time in seconds for the {@link Response} to live in {@link DiscordBot#getResponseLocator()}.
          * <br><br>
          * This value moves whenever the user interacts with the {@link Response}.
          * <br><br>

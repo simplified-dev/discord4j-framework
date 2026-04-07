@@ -5,8 +5,7 @@ import dev.sbs.discordapi.context.EventContext;
 import dev.sbs.discordapi.context.capability.ExceptionContext;
 import dev.sbs.discordapi.handler.exception.ExceptionHandler;
 import dev.sbs.discordapi.handler.response.CachedResponse;
-import dev.sbs.discordapi.handler.response.ResponseEntry;
-import dev.sbs.discordapi.handler.response.ResponseFollowup;
+import dev.sbs.discordapi.handler.response.ResponseLocator;
 import dev.sbs.discordapi.response.Response;
 import discord4j.common.util.Snowflake;
 import discord4j.core.event.domain.Event;
@@ -45,7 +44,6 @@ import java.util.function.Function;
  * @param <T> the Discord4J {@link Event} type wrapped by this context
  * @see EventContext
  * @see CachedResponse
- * @see ResponseFollowup
  */
 public interface MessageContext<T extends Event> extends EventContext<T> {
 
@@ -58,7 +56,7 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
      */
     default Mono<Void> consumeResponse(@NotNull Consumer<Response> consumer) {
         return Mono.justOrEmpty(this.getFollowup())
-            .map(ResponseFollowup::getResponse)
+            .map(CachedResponse::getResponse)
             .switchIfEmpty(Mono.justOrEmpty(this.getResponse()))
             .flatMap(response -> {
                 consumer.accept(response);
@@ -88,9 +86,14 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
      * @return a {@link Mono} completing when the message has been deleted
      */
     default Mono<Void> discordDeleteFollowup(@NotNull String identifier) {
-        return Mono.justOrEmpty(this.getFollowup(identifier))
-            .flatMap(followup -> this.getChannel().flatMap(channel -> channel.getMessageById(followup.getMessageId())))
-            .flatMap(Message::delete);
+        return this.findFollowup(identifier)
+            .flatMap(opt -> opt
+                .map(followup -> this.getChannel()
+                    .flatMap(channel -> channel.getMessageById(followup.getMessageId()))
+                    .flatMap(Message::delete)
+                )
+                .orElse(Mono.empty())
+            );
     }
 
     /**
@@ -101,7 +104,10 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
      */
     default Mono<Message> discordEditFollowup(@NotNull Response response) {
         return Mono.justOrEmpty(this.getFollowup())
-            .flatMap(followup -> this.discordEditFollowup(followup.getIdentifier(), response))
+            .flatMap(followup -> followup.getFollowupIdentifier()
+                .map(identifier -> this.discordEditFollowup(identifier, response))
+                .orElseGet(() -> this.discordEditMessage(followup.getMessageId(), response))
+            )
             .publishOn(response.getReactorScheduler());
     }
 
@@ -114,13 +120,16 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
      * @return a {@link Mono} emitting the edited message
      */
     default Mono<Message> discordEditFollowup(@NotNull String identifier, @NotNull Response response) {
-        return Mono.justOrEmpty(this.getFollowup(identifier))
-            .flatMap(followup -> this.discordEditMessage(
-                followup.getMessageId(),
-                response.mutate()
-                    .withReference(this.getMessageId())
-                    .build()
-            ))
+        return this.findFollowup(identifier)
+            .flatMap(opt -> opt
+                .map(followup -> this.discordEditMessage(
+                    followup.getMessageId(),
+                    response.mutate()
+                        .withReference(this.getMessageId())
+                        .build()
+                ))
+                .orElse(Mono.empty())
+            )
             .publishOn(response.getReactorScheduler());
     }
 
@@ -155,7 +164,10 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
      */
     default Mono<Void> deleteFollowup() {
         return Mono.justOrEmpty(this.getFollowup())
-            .flatMap(followup -> this.deleteFollowup(followup.getIdentifier()));
+            .flatMap(followup -> followup.getFollowupIdentifier()
+                .map(this::deleteFollowup)
+                .orElseGet(() -> this.discordDeleteFollowupEntry(followup))
+            );
     }
 
     /**
@@ -166,7 +178,22 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
      * @return a {@link Mono} completing when the followup has been deleted
      */
     default Mono<Void> deleteFollowup(@NotNull String identifier) {
-        return this.discordDeleteFollowup(identifier)
+        return this.findFollowup(identifier)
+            .flatMap(opt -> opt
+                .map(this::discordDeleteFollowupEntry)
+                .orElse(Mono.empty())
+            );
+    }
+
+    /**
+     * Internal helper that deletes a known followup entry from Discord and
+     * removes it from the locator.
+     */
+    private Mono<Void> discordDeleteFollowupEntry(@NotNull CachedResponse followup) {
+        ResponseLocator locator = this.getDiscordBot().getResponseLocator();
+        return this.getChannel()
+            .flatMap(channel -> channel.getMessageById(followup.getMessageId()))
+            .flatMap(Message::delete)
             .checkpoint("ResponseContext#deleteFollowup Processing")
             .onErrorResume(throwable -> this.getDiscordBot().getExceptionHandler().handleException(
                 ExceptionContext.of(
@@ -176,7 +203,7 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
                     "Followup Delete Exception"
                 )
             ))
-            .then(Mono.fromRunnable(() -> this.getResponseCacheEntry().removeFollowup(identifier)));
+            .then(locator.remove(followup.getUniqueId()));
     }
 
     /**
@@ -226,7 +253,7 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
      * @return a {@link Mono} completing when the followup edit has been applied
      */
     default Mono<Void> editFollowup() {
-        return this.editFollowup(ResponseEntry::getResponse);
+        return this.editFollowup(CachedResponse::getResponse);
     }
 
     /**
@@ -235,8 +262,9 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
      * @param responseFunction the function that extracts or transforms the response from the followup
      * @return a {@link Mono} completing when the followup edit has been applied
      */
-    default Mono<Void> editFollowup(@NotNull Function<ResponseFollowup, Response> responseFunction) {
-        return Mono.justOrEmpty(this.getFollowup()).flatMap(followup -> this.editFollowup(followup.getIdentifier(), responseFunction));
+    default Mono<Void> editFollowup(@NotNull Function<CachedResponse, Response> responseFunction) {
+        return Mono.justOrEmpty(this.getFollowup())
+            .flatMap(followup -> this.editFollowupEntry(followup, responseFunction));
     }
 
     /**
@@ -247,29 +275,33 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
      * @param responseFunction the function that extracts or transforms the response from the followup
      * @return a {@link Mono} completing when the followup edit has been applied and cached
      */
-    default Mono<Void> editFollowup(@NotNull String identifier, @NotNull Function<ResponseFollowup, Response> responseFunction) {
-        return Mono.justOrEmpty(this.getFollowup(identifier))
-            .flatMap(followup -> {
-                Response editedResponse = responseFunction.apply(followup);
+    default Mono<Void> editFollowup(@NotNull String identifier, @NotNull Function<CachedResponse, Response> responseFunction) {
+        return this.findFollowup(identifier)
+            .flatMap(opt -> opt
+                .map(followup -> this.editFollowupEntry(followup, responseFunction))
+                .orElse(Mono.empty())
+            );
+    }
 
-                return this.discordEditFollowup(identifier, editedResponse)
-                    .checkpoint("ResponseContext#editFollowup Processing")
-                    .onErrorResume(throwable -> this.getDiscordBot().getExceptionHandler().handleException(
-                        ExceptionContext.of(
-                            this.getDiscordBot(),
-                            this,
-                            throwable,
-                            "Followup Edit Exception"
-                        )
-                    ))
-                    .flatMap(message -> Mono.just(this.getResponseCacheEntry())
-                        .flatMap(entry -> followup.updateResponse(editedResponse)
-                            .then(followup.updateReactions(message))
-                            .then(followup.updateAttachments(message))
-                            .then(entry.updateLastInteract())
-                        )
-                    );
-            })
+    /** Internal helper that edits a known followup entry. */
+    private Mono<Void> editFollowupEntry(@NotNull CachedResponse followup, @NotNull Function<CachedResponse, Response> responseFunction) {
+        Response editedResponse = responseFunction.apply(followup);
+
+        return this.discordEditMessage(followup.getMessageId(), editedResponse)
+            .checkpoint("ResponseContext#editFollowup Processing")
+            .onErrorResume(throwable -> this.getDiscordBot().getExceptionHandler().handleException(
+                ExceptionContext.of(
+                    this.getDiscordBot(),
+                    this,
+                    throwable,
+                    "Followup Edit Exception"
+                )
+            ))
+            .flatMap(message -> followup.updateResponse(editedResponse)
+                .then(followup.updateReactions(message))
+                .then(followup.updateAttachments(message))
+                .then(this.getResponseCacheEntry().updateLastInteract())
+            )
             .then();
     }
 
@@ -286,15 +318,19 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
 
     /**
      * Sends the given {@link Response} as a followup message with the specified identifier,
-     * referencing the original message. The followup is registered in the
-     * {@link CachedResponse} and its reactions, attachments, and last-interact timestamp
-     * are updated. Errors are forwarded to the {@link ExceptionHandler}.
+     * referencing the original message. The followup is registered as an independent
+     * {@link CachedResponse} entry whose {@link CachedResponse#getParentId() parentId}
+     * points at this context's primary entry. Errors are forwarded to the
+     * {@link ExceptionHandler}.
      *
      * @param identifier the identifier for this followup
      * @param response the response to send as a followup
      * @return a {@link Mono} completing when the followup has been sent and cached
      */
     default Mono<Void> followup(@NotNull String identifier, @NotNull Response response) {
+        ResponseLocator locator = this.getDiscordBot().getResponseLocator();
+        CachedResponse parent = this.getResponseCacheEntry();
+
         return this.discordBuildFollowup(response)
             .checkpoint("ResponseContext#followup Processing")
             .onErrorResume(throwable -> this.getDiscordBot().getExceptionHandler().handleException(
@@ -305,19 +341,12 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
                     "Followup Create Exception"
                 )
             ))
-            .flatMap(message -> Mono.just(this.getResponseCacheEntry()).flatMap(
-                entry -> entry.addFollowup(
-                        identifier,
-                        message.getChannelId(),
-                        this.getInteractUserId(),
-                        message.getId(),
-                        response
-                    )
-                    .flatMap(followup -> followup.updateReactions(message)
-                        .then(followup.updateAttachments(message))
-                        .then(entry.updateLastInteract())
-                    )
-            ))
+            .flatMap(message -> locator.storeFollowup(parent, identifier, message, this, response)
+                .flatMap(followup -> followup.updateReactions(message)
+                    .then(followup.updateAttachments(message))
+                    .then(parent.updateLastInteract())
+                )
+            )
             .then();
     }
 
@@ -327,17 +356,17 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
         return this.getMessage().flatMap(Message::getChannel);
     }
 
-    /** The default {@link ResponseFollowup} associated with this context, if one exists. */
-    @NotNull Optional<ResponseFollowup> getFollowup();
+    /** The default followup {@link CachedResponse} associated with this context, if one exists. */
+    @NotNull Optional<CachedResponse> getFollowup();
 
     /**
-     * Returns the {@link ResponseFollowup} with the given identifier from the cached response entry.
+     * Returns the followup {@link CachedResponse} with the given identifier from the locator.
      *
      * @param identifier the followup identifier to look up
-     * @return an {@link Optional} containing the matching followup, or empty if not found
+     * @return a mono emitting an {@link Optional} containing the matching followup, or empty if not found
      */
-    default @NotNull Optional<ResponseFollowup> getFollowup(@NotNull String identifier) {
-        return this.getResponseCacheEntry().findFollowup(identifier);
+    default Mono<Optional<CachedResponse>> findFollowup(@NotNull String identifier) {
+        return this.getDiscordBot().getResponseLocator().findFollowupByIdentifier(this.getResponseId(), identifier);
     }
 
     /** The Discord {@link Message} associated with this context. */
@@ -346,7 +375,7 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
     /** The {@link Snowflake} identifier of the message associated with this context. */
     Snowflake getMessageId();
 
-    /** The cached {@link Response} from the response handler. */
+    /** The cached {@link Response} from the response locator. */
     default @NotNull Response getResponse() {
         return this.getResponseCacheEntry().getResponse();
     }
@@ -354,8 +383,13 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
     /** The {@link CachedResponse} entry for this context's response id. */
     default @NotNull CachedResponse getResponseCacheEntry() {
         return this.getDiscordBot()
-            .getResponseHandler()
-            .findFirstOrNull(entry -> entry.getResponse().getUniqueId(), this.getResponseId());
+            .getResponseLocator()
+            .findByResponseId(this.getResponseId())
+            .blockOptional()
+            .flatMap(o -> o)
+            .orElseThrow(() -> new IllegalStateException(
+                "No cached response entry exists for response id " + this.getResponseId()
+            ));
     }
 
     /**
@@ -367,7 +401,7 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
      */
     default Mono<Void> withResponse(@NotNull Function<Response, Mono<Void>> function) {
         return Mono.justOrEmpty(this.getFollowup())
-            .map(ResponseFollowup::getResponse)
+            .map(CachedResponse::getResponse)
             .switchIfEmpty(Mono.justOrEmpty(this.getResponse()))
             .flatMap(function);
     }
@@ -393,7 +427,7 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
      * @param followup an optional followup associated with this message
      * @return a new {@code Create} context
      */
-    static @NotNull Create ofCreate(@NotNull DiscordBot discordBot, @NotNull MessageCreateEvent event, @NotNull Response cachedMessage, @NotNull Optional<ResponseFollowup> followup) {
+    static @NotNull Create ofCreate(@NotNull DiscordBot discordBot, @NotNull MessageCreateEvent event, @NotNull Response cachedMessage, @NotNull Optional<CachedResponse> followup) {
         return new Create(
             discordBot,
             event,
@@ -434,7 +468,7 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
         /**
          * The default followup associated with this context, if any.
          */
-        private final @NotNull Optional<ResponseFollowup> followup;
+        private final @NotNull Optional<CachedResponse> followup;
 
         /** {@inheritDoc} */
         @Override

@@ -2,7 +2,7 @@ package dev.sbs.discordapi.listener.message;
 
 import dev.sbs.discordapi.DiscordBot;
 import dev.sbs.discordapi.context.message.ReactionContext;
-import dev.sbs.discordapi.handler.response.ResponseFollowup;
+import dev.sbs.discordapi.handler.response.CachedResponse;
 import dev.sbs.discordapi.response.Emoji;
 import dev.sbs.discordapi.response.Response;
 import discord4j.core.event.domain.message.ReactionAddEvent;
@@ -26,7 +26,7 @@ public final class ReactionAddListener extends ReactionListener<ReactionAddEvent
     }
 
     @Override
-    protected @NotNull ReactionContext getContext(@NotNull ReactionAddEvent event, @NotNull Response cachedMessage, @NotNull Emoji emoji, @NotNull Optional<ResponseFollowup> followup) {
+    protected @NotNull ReactionContext getContext(@NotNull ReactionAddEvent event, @NotNull Response cachedMessage, @NotNull Emoji emoji, @NotNull Optional<CachedResponse> followup) {
         return ReactionContext.of(
             this.getDiscordBot(),
             event,

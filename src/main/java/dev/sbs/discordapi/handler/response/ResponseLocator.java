@@ -14,10 +14,10 @@ import java.util.UUID;
 
 /**
  * Reactive abstraction over the discord-api response cache that replaces the
- * in-memory {@link ResponseHandler} linear-scan list. The default
- * implementation is a composite of an in-memory hot tier (indexed by
- * {@code messageId} and {@code responseId} for O(1) lookup) and a JPA-backed
- * cold tier for persistent responses that survive bot restarts.
+ * legacy in-memory linear-scan list. The default implementation is a composite
+ * of an in-memory hot tier (indexed by {@code messageId} and {@code uniqueId}
+ * for O(1) lookup) and a JPA-backed cold tier for persistent responses that
+ * survive bot restarts.
  *
  * <p>
  * Persistence branching is internal: {@link #store} inspects
@@ -29,15 +29,14 @@ import java.util.UUID;
  * <p>
  * The hydration flow for persistent messages is handled inside
  * {@link #findForInteraction}: on cold-tier hit with no matching hot entry,
- * the composite impl constructs a {@code HydrationContext} from the incoming
- * event, invokes the registered
+ * the composite impl constructs a {@link dev.sbs.discordapi.context.HydrationContext
+ * HydrationContext} from the incoming event, invokes the registered
  * {@link dev.sbs.discordapi.response.PersistentResponse @PersistentResponse}
  * method on the resolved owner instance, caches the reconstructed
  * {@link Response} in the hot tier, and returns the populated entry.
  * Callers never see the tier boundary.
  *
  * @see CachedResponse
- * @see ResponseHandler
  */
 public interface ResponseLocator {
 
@@ -72,6 +71,26 @@ public interface ResponseLocator {
     Mono<Optional<CachedResponse>> findByResponseId(@NotNull UUID responseId);
 
     /**
+     * Looks up a followup entry by its parent's response id and the
+     * user-supplied followup identifier.
+     *
+     * @param parentId the {@link Response#getUniqueId() uniqueId} of the parent entry
+     * @param identifier the user-supplied followup identifier
+     * @return a mono emitting the matching followup entry, or empty
+     */
+    Mono<Optional<CachedResponse>> findFollowupByIdentifier(@NotNull UUID parentId, @NotNull String identifier);
+
+    /**
+     * Looks up a followup entry by its parent's response id and the followup's
+     * Discord message snowflake.
+     *
+     * @param parentId the {@link Response#getUniqueId() uniqueId} of the parent entry
+     * @param messageId the Discord message snowflake of the followup message
+     * @return a mono emitting the matching followup entry, or empty
+     */
+    Mono<Optional<CachedResponse>> findFollowupByMessage(@NotNull UUID parentId, @NotNull Snowflake messageId);
+
+    /**
      * Stores a newly-sent message and its {@link Response}. Internally
      * branches on {@link Response#isPersistent()} to route either to the
      * hot tier only (temporary) or write-through to both tiers (persistent).
@@ -92,16 +111,24 @@ public interface ResponseLocator {
      * default.
      *
      * @param parent the parent cached entry
+     * @param identifier the user-supplied followup identifier
      * @param message the newly-sent followup Discord message
      * @param creatorContext the context in which the followup was created
      * @param response the followup response state
      * @return a mono emitting the newly stored followup entry
      */
-    Mono<CachedResponse> storeFollowup(@NotNull CachedResponse parent, @NotNull Message message, @NotNull EventContext<?> creatorContext, @NotNull Response response);
+    Mono<CachedResponse> storeFollowup(
+        @NotNull CachedResponse parent,
+        @NotNull String identifier,
+        @NotNull Message message,
+        @NotNull EventContext<?> creatorContext,
+        @NotNull Response response
+    );
 
     /**
      * Removes an entry by stable response id. For persistent entries, also
-     * deletes the row from the cold tier.
+     * deletes the row from the cold tier. Cascades to followup entries
+     * that reference this entry as their parent.
      *
      * @param responseId the stable response id to remove
      * @return a mono completing when removal finishes

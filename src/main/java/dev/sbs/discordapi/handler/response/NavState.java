@@ -2,10 +2,12 @@ package dev.sbs.discordapi.handler.response;
 
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentList;
+import dev.simplified.persistence.type.GsonType;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.Serializable;
 import java.util.Optional;
 
 /**
@@ -23,11 +25,14 @@ import java.util.Optional;
  *
  * <p>
  * Stored in the {@code nav_state_json} column of the persistent response
- * table, serialized via Gson.
+ * table, serialized via Gson. Marked with {@link GsonType} so the persistence
+ * library auto-registers a {@code GsonJsonType<NavState>} when this class
+ * appears as a field type on a {@link dev.simplified.persistence.JpaModel}.
  */
 @Getter
+@GsonType
 @RequiredArgsConstructor
-public final class NavState {
+public final class NavState implements Serializable {
 
     /** Identifier of the page currently displayed, if any. */
     private final @NotNull Optional<String> currentPageId;

@@ -52,10 +52,13 @@ public interface ComponentContext extends MessageContext<ComponentInteractionEve
     @Override
     default Mono<Void> discordDeleteFollowup(@NotNull String identifier) {
         return this.deferEdit().then(
-            Mono.justOrEmpty(this.getFollowup(identifier))
-                .flatMap(followup -> this.getEvent()
-                    .deleteFollowup(followup.getMessageId())
-                    .publishOn(followup.getResponse().getReactorScheduler())
+            this.findFollowup(identifier)
+                .flatMap(opt -> opt
+                    .map(followup -> this.getEvent()
+                        .deleteFollowup(followup.getMessageId())
+                        .publishOn(followup.getResponse().getReactorScheduler())
+                    )
+                    .orElse(Mono.empty())
                 )
         );
     }
@@ -71,9 +74,12 @@ public interface ComponentContext extends MessageContext<ComponentInteractionEve
     @Override
     default Mono<Message> discordEditFollowup(@NotNull String identifier, @NotNull Response response) {
         return this.deferEdit(response.isEphemeral()).then(
-            Mono.justOrEmpty(this.getFollowup(identifier))
-            .flatMap(followup -> this.getEvent().editFollowup(followup.getMessageId(), response.getD4jInteractionReplyEditSpec()))
-            .publishOn(response.getReactorScheduler())
+            this.findFollowup(identifier)
+                .flatMap(opt -> opt
+                    .map(followup -> this.getEvent().editFollowup(followup.getMessageId(), response.getD4jInteractionReplyEditSpec()))
+                    .orElse(Mono.empty())
+                )
+                .publishOn(response.getReactorScheduler())
         );
     }
 
@@ -88,7 +94,7 @@ public interface ComponentContext extends MessageContext<ComponentInteractionEve
     @Override
     default Mono<Message> discordEditMessage(@NotNull Response response) {
         return Mono.just(this.getResponseCacheEntry())
-            .filter(CachedResponse::isDeferred)
+            .filter(entry -> entry.getState() == CachedResponse.State.DEFERRED)
             .flatMap(entry -> this.getEvent().editReply(response.getD4jInteractionReplyEditSpec()))
             .switchIfEmpty(
                 this.getEvent()

@@ -7,11 +7,14 @@ import dev.sbs.discordapi.listener.DiscordListener;
 import discord4j.core.event.domain.message.MessageCreateEvent;
 import org.jetbrains.annotations.NotNull;
 import org.reactivestreams.Publisher;
-import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+import java.util.Optional;
 
 /**
  * Listener for message create events from bot users, matching the message to a
- * {@link CachedResponse} and invoking its registered create interaction handler.
+ * {@link CachedResponse} via the response locator and invoking its registered
+ * create interaction handler.
  */
 public class MessageCreateListener extends DiscordListener<MessageCreateEvent> {
 
@@ -26,22 +29,29 @@ public class MessageCreateListener extends DiscordListener<MessageCreateEvent> {
 
     @Override
     public final Publisher<Void> apply(@NotNull MessageCreateEvent event) {
-        return Flux.fromIterable(this.getDiscordBot().getResponseHandler())
-            .filter(entry -> event.getMessage().getUserData().bot().toOptional().orElse(false)) // Only Bots
-            .filter(entry -> entry.matchesMessage(entry.getMessageId(), event.getMessage().getUserData().id())) // Validate Message & User ID
-            .singleOrEmpty()
-            .doOnNext(CachedResponse::setBusy)
-            .flatMap(entry -> entry.getResponse()
-                .getCreateInteraction()
-                .apply(MessageContext.ofCreate(
-                    this.getDiscordBot(),
-                    event,
-                    entry.getResponse(),
-                    entry.findFollowup(event.getMessage().getId())
-                ))
-                .then(entry.updateLastInteract())
-                .then()
+        if (!event.getMessage().getUserData().bot().toOptional().orElse(false))
+            return Mono.empty();
+
+        return this.getDiscordBot().getResponseLocator().findByMessage(event.getMessage().getId())
+            .flatMap(opt -> opt
+                .map(entry -> this.dispatchCreate(event, entry))
+                .orElse(Mono.empty())
             );
+    }
+
+    private Mono<Void> dispatchCreate(@NotNull MessageCreateEvent event, @NotNull CachedResponse entry) {
+        entry.setBusy();
+        Optional<CachedResponse> followup = entry.isFollowup() ? Optional.of(entry) : Optional.empty();
+        return entry.getResponse()
+            .getCreateInteraction()
+            .apply(MessageContext.ofCreate(
+                this.getDiscordBot(),
+                event,
+                entry.getResponse(),
+                followup
+            ))
+            .then(entry.updateLastInteract())
+            .then();
     }
 
 }

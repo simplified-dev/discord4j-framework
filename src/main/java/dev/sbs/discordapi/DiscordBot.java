@@ -24,16 +24,24 @@ import dev.sbs.discordapi.exception.DiscordGatewayException;
 import dev.sbs.discordapi.handler.CommandHandler;
 import dev.sbs.discordapi.handler.DiscordConfig;
 import dev.sbs.discordapi.handler.EmojiHandler;
+import dev.sbs.discordapi.handler.PersistentComponentHandler;
 import dev.sbs.discordapi.handler.exception.CompositeExceptionHandler;
 import dev.sbs.discordapi.handler.exception.DiscordExceptionHandler;
 import dev.sbs.discordapi.handler.exception.ExceptionHandler;
 import dev.sbs.discordapi.handler.exception.SentryExceptionHandler;
 import dev.sbs.discordapi.handler.response.CachedResponse;
-import dev.sbs.discordapi.handler.response.ResponseFollowup;
-import dev.sbs.discordapi.handler.response.ResponseHandler;
+import dev.sbs.discordapi.handler.response.CompositeResponseLocator;
+import dev.sbs.discordapi.handler.response.InMemoryResponseLocator;
+import dev.sbs.discordapi.handler.response.JpaResponseLocator;
+import dev.sbs.discordapi.handler.response.ResponseLocator;
 import dev.sbs.discordapi.handler.shard.ShardHandler;
 import dev.sbs.discordapi.listener.BotEventListener;
 import dev.sbs.discordapi.listener.DiscordListener;
+import dev.sbs.discordapi.listener.PersistentComponentListener;
+import dev.simplified.persistence.JpaConfig;
+import dev.simplified.persistence.JpaSession;
+import dev.simplified.persistence.RepositoryFactory;
+import dev.simplified.persistence.SessionManager;
 import dev.sbs.discordapi.listener.command.AutoCompleteListener;
 import dev.sbs.discordapi.listener.command.MessageCommandListener;
 import dev.sbs.discordapi.listener.command.SlashCommandListener;
@@ -49,6 +57,7 @@ import dev.sbs.discordapi.response.page.FormPage;
 import dev.sbs.discordapi.response.page.Page;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentList;
+import dev.simplified.collection.ConcurrentSet;
 import dev.simplified.reflection.Reflection;
 import dev.simplified.scheduler.Scheduler;
 import dev.simplified.util.Logging;
@@ -81,6 +90,7 @@ import reactor.util.retry.Retry;
 import java.lang.reflect.Modifier;
 import java.net.SocketException;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -104,13 +114,12 @@ import java.util.concurrent.TimeUnit;
  *     </ul></li>
  *     <li>Responses
  *     <ul>
- *         <li>{@link ResponseHandler Registration & Caching}</li>
+ *         <li>{@link ResponseLocator Registration & Caching}</li>
  *         <li>{@link Page Pages}</li>
  *         <li>Implementations
  *         <ul>
  *             <li>{@link Response}</li>
  *             <li>{@link FormPage}</li>
- *             <li>{@link ResponseFollowup Followups}</li>
  *         </ul></li>
  *         <li>Components
  *         <ul>
@@ -141,8 +150,11 @@ public abstract class DiscordBot {
     // Handlers
     private final @NotNull ExceptionHandler exceptionHandler;
     private final @NotNull EmojiHandler emojiHandler;
-    private final @NotNull ResponseHandler responseHandler;
     private final @NotNull CommandHandler commandHandler;
+    private final @NotNull Optional<JpaSession> jpaSession;
+    private final @NotNull InMemoryResponseLocator hotTier;
+    private @NotNull ResponseLocator responseLocator;
+    private PersistentComponentHandler persistentComponentHandler;
 
     // REST
     private DiscordClient client;
@@ -156,12 +168,67 @@ public abstract class DiscordBot {
         this.config = config;
         this.exceptionHandler = this.buildExceptionHandler();
         this.emojiHandler = new EmojiHandler(this);
-        this.responseHandler = new ResponseHandler();
         Logging.setRootLevel(this.getConfig().getLogLevel());
 
         this.commandHandler = CommandHandler.builder(this)
             .withCommands(this.getConfig().getCommands())
             .build();
+
+        // Build response locator: hot tier always, with optional cold tier
+        // when a JpaConfig was supplied. The cold tier uses a derived config
+        // pointing at discord-api's own entity package so its model scan is
+        // independent of any user-supplied repository factory.
+        this.hotTier = new InMemoryResponseLocator();
+
+        if (config.getJpaConfig().isPresent()) {
+            JpaConfig derived = this.deriveJpaConfig(config.getJpaConfig().get());
+            JpaSession session = new SessionManager().connect(derived);
+            this.jpaSession = Optional.of(session);
+        } else {
+            this.jpaSession = Optional.empty();
+        }
+
+        // Composite locator is created inside connect() once the persistent
+        // component handler exists. Until then, store() calls route through
+        // the hot tier alone; this is safe because no listener can fire
+        // before connect() finishes wiring everything up.
+        this.responseLocator = this.hotTier;
+    }
+
+    /**
+     * Derives a {@link JpaConfig} from the user-supplied config that points at
+     * discord-api's own entity package, so the persistence library scans
+     * {@link dev.sbs.discordapi.handler.response.jpa PersistentResponseEntity}
+     * regardless of how the user-supplied factory was configured.
+     */
+    private @NotNull JpaConfig deriveJpaConfig(@NotNull JpaConfig source) {
+        JpaConfig.Builder builder = JpaConfig.builder()
+            .withDriver(source.getDriver())
+            .withSchema(source.getSchema())
+            .withGsonSettings(source.getGsonSettings())
+            .withCacheProvider(source.getCacheProvider())
+            .withRepositoryFactory(
+                RepositoryFactory.builder()
+                    .withPackageOf(dev.sbs.discordapi.handler.response.jpa.PersistentResponseEntity.class)
+                    .build()
+            )
+            .withLogLevel(source.getLogLevel())
+            .isUsing2ndLevelCache(source.isUsing2ndLevelCache())
+            .isUsingQueryCache(source.isUsingQueryCache())
+            .isUsingStatistics(source.isUsingStatistics())
+            .withCacheConcurrencyStrategy(source.getCacheConcurrencyStrategy())
+            .withCacheMissingStrategy(source.getMissingCacheStrategy())
+            .withQueryResultsTTL(source.getQueryResultsTTL())
+            .withDefaultCacheExpiryMs(source.getDefaultCacheExpiryMs());
+
+        if (!source.getDriver().isEmbedded()) {
+            builder.withHost(source.getHost())
+                .withPort(source.getPort())
+                .withUser(source.getUser())
+                .withPassword(source.getPassword());
+        }
+
+        return builder.build();
     }
 
     /**
@@ -204,13 +271,32 @@ public abstract class DiscordBot {
                     log.info("Gateway Connected");
                     this.emitBotEvent(new GatewayConnectBotEvent(this, gatewayDiscordClient));
 
-                    log.info("Scheduling Cache Cleaner");
-                    this.scheduler.scheduleAsync(() -> this.responseHandler.matchAll(CachedResponse::notActive).forEach(entry -> {
-                        // Clear Cached Message
-                        this.responseHandler.remove(entry);
+                    log.info("Loading Persistent Component Handler");
+                    ConcurrentSet<Class<? extends PersistentComponentListener>> persistentListenerClasses = Reflection.getResources()
+                        .filterPackage(PersistentComponentListener.class)
+                        .getSubtypesOf(PersistentComponentListener.class)
+                        .stream()
+                        .filter(listenerClass -> !Modifier.isAbstract(listenerClass.getModifiers()))
+                        .collect(Concurrent.toSet());
 
-                        // Clear Message Components and Reactions
-                        this.getGateway()
+                    this.persistentComponentHandler = new PersistentComponentHandler(
+                        this,
+                        this.getCommandHandler().getLoadedCommands(),
+                        persistentListenerClasses
+                    );
+
+                    // Promote the locator to a composite once the persistent
+                    // component handler is available, so cold-tier hydration
+                    // can dispatch through registered builder routes.
+                    if (this.jpaSession.isPresent()) {
+                        JpaResponseLocator coldTier = new JpaResponseLocator(this.jpaSession.get());
+                        this.responseLocator = new CompositeResponseLocator(this, this.hotTier, coldTier, this.persistentComponentHandler);
+                    }
+
+                    log.info("Scheduling Cache Cleaner");
+                    this.scheduler.scheduleAsync(() -> this.responseLocator.findExpired()
+                        .doOnNext(entry -> this.responseLocator.remove(entry.getUniqueId()).subscribe())
+                        .flatMap(entry -> this.getGateway()
                             .getChannelById(entry.getChannelId())
                             .ofType(MessageChannel.class)
                             .flatMap(channel -> channel.getMessageById(entry.getMessageId()))
@@ -223,8 +309,8 @@ public abstract class DiscordBot {
                                         .getD4jEditSpec()
                                 )))
                             )
-                            .subscribe();
-                    }), 0, 1, TimeUnit.SECONDS);
+                        )
+                        .subscribe(), 0, 1, TimeUnit.SECONDS);
 
                     log.info("Registering Event Listeners");
                     ConcurrentList<Publisher<Void>> eventListeners = Reflection.getResources()

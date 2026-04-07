@@ -1,163 +1,319 @@
 package dev.sbs.discordapi.handler.response;
 
 import dev.sbs.discordapi.component.interaction.Modal;
+import dev.sbs.discordapi.response.Emoji;
 import dev.sbs.discordapi.response.Response;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentList;
 import dev.simplified.collection.ConcurrentMap;
 import discord4j.common.util.Snowflake;
+import discord4j.core.object.entity.Message;
 import discord4j.core.object.entity.User;
-import discord4j.discordjson.Id;
-import lombok.Getter;
+import discord4j.core.object.reaction.Reaction;
 import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
- * Cached entry for a primary {@link Response} message, tracking its
- * lifecycle state (busy, deferred, last interaction time), associated
- * {@link ResponseFollowup} messages, and per-user active {@link Modal} dialogs.
+ * Hot-tier cache entry pairing a {@link Response} with the Discord identifiers
+ * of the message backing it. A single {@code CachedResponse} type represents
+ * both top-level replies and followup messages: followups are independent
+ * entries whose {@link #getParentId() parentId} points at their parent's
+ * {@link #getUniqueId() uniqueId}, allowing the locator to apply uniform
+ * expiry, lookup, and cascade-delete logic across both kinds.
  *
  * <p>
- * A cached response is considered {@linkplain #isActive() active} while
- * it is busy or its time-to-live has not elapsed since the last
- * interaction. Inactive responses are eligible for removal from the
- * {@link ResponseHandler}.
+ * Lifecycle is tracked through a single {@link State} enum that replaces
+ * the previous {@code busy}/{@code deferred} two-flag scheme, eliminating
+ * impossible combinations and improving readability at call sites.
  *
- * @see ResponseEntry
- * @see ResponseFollowup
- * @see ResponseHandler
+ * <p>
+ * The {@link Response} is the single source of truth for content - dirty
+ * checking flows through {@link Response#isCacheUpdateRequired()} rather
+ * than an equality-based snapshot.
+ *
+ * <p>
+ * Persistence metadata ({@link #getOwnerClass() ownerClass} and
+ * {@link #getBuilderId() builderId}) is populated for entries written to the
+ * JPA cold tier and used by the hydration flow to locate the matching
+ * {@link dev.sbs.discordapi.response.PersistentResponse @PersistentResponse}
+ * builder method when the in-memory cache is missed after a restart.
+ *
+ * @see ResponseLocator
+ * @see NavState
+ * @see dev.sbs.discordapi.handler.response.jpa.PersistentResponseEntity
  */
-@Getter
-public final class CachedResponse implements ResponseEntry {
+public final class CachedResponse {
 
-    /** Discord channel snowflake where the response message resides. */
-    private final @NotNull Snowflake channelId;
+    /** Lifecycle states for a cached entry. */
+    public enum State {
 
-    /** Discord user snowflake of the user who owns this response. */
-    private final @NotNull Snowflake userId;
+        /** No interaction is currently in flight; the entry is eligible for expiry checks. */
+        IDLE,
 
-    /** Discord message snowflake of the response message. */
+        /** A handler is actively processing an interaction targeting this entry. */
+        BUSY,
+
+        /** An interaction has been deferred to Discord but its handler has not yet responded. */
+        DEFERRED
+
+    }
+
+    private final @NotNull UUID uniqueId;
     private final @NotNull Snowflake messageId;
-
-    /** Current (possibly updated) response state. */
-    private @NotNull Response response;
-
-    /** Snapshot of the response state as last sent to Discord. */
-    private @NotNull Response currentResponse;
-
-    /** Followup messages associated with this cached response. */
-    private final @NotNull ConcurrentList<ResponseFollowup> followups = Concurrent.newList();
-
-    /** Map of user snowflakes to their currently active modal dialogs. */
+    private final @NotNull Snowflake channelId;
+    private final @NotNull Snowflake userId;
+    private final @NotNull Optional<Snowflake> guildId;
+    private final @NotNull Optional<UUID> parentId;
+    private final @NotNull Optional<String> followupIdentifier;
     private final @NotNull ConcurrentMap<Snowflake, Modal> activeModals = Concurrent.newMap();
+    private final @NotNull Optional<Class<?>> ownerClass;
+    private final @NotNull Optional<String> builderId;
+    private final @NotNull Instant createdAt;
+    private final @NotNull Optional<Instant> expiresAt;
 
-    /** Epoch millisecond timestamp of the most recent user interaction. */
-    private long lastInteract = System.currentTimeMillis();
+    private volatile @NotNull Response response;
+    private volatile @NotNull State state;
+    private volatile long lastInteract;
+    private volatile @NotNull NavState navState;
 
-    /** Whether this response is currently being processed. */
-    private boolean busy;
+    private CachedResponse(@NotNull Builder builder) {
+        this.uniqueId = builder.uniqueId;
+        this.messageId = builder.messageId;
+        this.channelId = builder.channelId;
+        this.userId = builder.userId;
+        this.guildId = builder.guildId;
+        this.parentId = builder.parentId;
+        this.followupIdentifier = builder.followupIdentifier;
+        this.ownerClass = builder.ownerClass;
+        this.builderId = builder.builderId;
+        this.createdAt = builder.createdAt;
+        this.expiresAt = builder.expiresAt;
+        this.response = builder.response;
+        this.state = builder.state;
+        this.lastInteract = builder.lastInteract;
+        this.navState = builder.navState;
+    }
 
-    /** Whether this response's reply has been deferred. */
-    private boolean deferred;
+    /** Returns a new builder for constructing a {@code CachedResponse}. */
+    public static @NotNull Builder builder() {
+        return new Builder();
+    }
+
+    /** The stable identifier shared with the wrapped {@link Response#getUniqueId()}. */
+    public @NotNull UUID getUniqueId() {
+        return this.uniqueId;
+    }
+
+    /** The Discord message snowflake of the message backing this entry. */
+    public @NotNull Snowflake getMessageId() {
+        return this.messageId;
+    }
+
+    /** The Discord channel snowflake of the channel containing the message. */
+    public @NotNull Snowflake getChannelId() {
+        return this.channelId;
+    }
+
+    /** The Discord user snowflake of the user who triggered creation of this entry. */
+    public @NotNull Snowflake getUserId() {
+        return this.userId;
+    }
+
+    /** The Discord guild snowflake, or empty for direct-message contexts. */
+    public @NotNull Optional<Snowflake> getGuildId() {
+        return this.guildId;
+    }
 
     /**
-     * Constructs a new {@code CachedResponse} in the busy, non-deferred state.
-     *
-     * @param channelId the Discord channel snowflake
-     * @param userId the user snowflake
-     * @param messageId the message snowflake
-     * @param response the response to cache
+     * The {@link #getUniqueId() uniqueId} of the parent entry when this entry
+     * represents a followup, or empty for top-level entries.
      */
-    public CachedResponse(@NotNull Snowflake channelId, @NotNull Snowflake userId, @NotNull Snowflake messageId, @NotNull Response response) {
-        this.channelId = channelId;
-        this.userId = userId;
-        this.messageId = messageId;
+    public @NotNull Optional<UUID> getParentId() {
+        return this.parentId;
+    }
+
+    /** Optional user-supplied identifier for the followup, used to address it by name. */
+    public @NotNull Optional<String> getFollowupIdentifier() {
+        return this.followupIdentifier;
+    }
+
+    /** The current {@link Response} bound to this entry. */
+    public @NotNull Response getResponse() {
+        return this.response;
+    }
+
+    /** The lifecycle state of this entry. */
+    public @NotNull State getState() {
+        return this.state;
+    }
+
+    /** Epoch millisecond timestamp of the most recent user interaction with this entry. */
+    public long getLastInteract() {
+        return this.lastInteract;
+    }
+
+    /** The most recent {@link NavState navigation state} captured for persistence. */
+    public @NotNull NavState getNavState() {
+        return this.navState;
+    }
+
+    /** The fully-qualified host class for the persistent builder, or empty for transient entries. */
+    public @NotNull Optional<Class<?>> getOwnerClass() {
+        return this.ownerClass;
+    }
+
+    /** Builder discriminator id for the persistent host class, or empty for transient entries. */
+    public @NotNull Optional<String> getBuilderId() {
+        return this.builderId;
+    }
+
+    /** Timestamp at which this entry was created. */
+    public @NotNull Instant getCreatedAt() {
+        return this.createdAt;
+    }
+
+    /**
+     * Optional expiration instant for this entry. Empty indicates the entry
+     * never expires (typical for persistent rows whose builder explicitly
+     * leaves time-to-live unset).
+     */
+    public @NotNull Optional<Instant> getExpiresAt() {
+        return this.expiresAt;
+    }
+
+    /** Per-user modal map for matching modal-submit events back to this entry. */
+    public @NotNull ConcurrentMap<Snowflake, Modal> getActiveModals() {
+        return this.activeModals;
+    }
+
+    /** {@code true} if this entry represents a followup of another entry. */
+    public boolean isFollowup() {
+        return this.parentId.isPresent();
+    }
+
+    /** {@code true} if this entry has persistence metadata and should be written to the cold tier. */
+    public boolean isPersistent() {
+        return this.ownerClass.isPresent();
+    }
+
+    /**
+     * {@code true} if this entry's bound {@link Response} signals a pending
+     * cache update via {@link Response#isCacheUpdateRequired()}, indicating
+     * a render is needed before the next user-visible state change.
+     */
+    public boolean isModified() {
+        return this.response.isCacheUpdateRequired();
+    }
+
+    /**
+     * {@code true} while a handler is processing an interaction OR the
+     * entry's time-to-live has not yet elapsed since the last interaction.
+     * Inactive entries are eligible for eviction by the scheduled cleanup loop.
+     */
+    public boolean isActive() {
+        if (this.state != State.IDLE)
+            return true;
+
+        return System.currentTimeMillis() < this.lastInteract + (this.response.getTimeToLive() * 1000L);
+    }
+
+    /** Inverse of {@link #isActive()}. */
+    public boolean notActive() {
+        return !this.isActive();
+    }
+
+    /** Marks this entry as currently being processed. */
+    public void setBusy() {
+        this.state = State.BUSY;
+    }
+
+    /** Marks this entry as deferred (the initial Discord ack has been sent). */
+    public void setDeferred() {
+        this.state = State.DEFERRED;
+    }
+
+    /** Replaces the bound {@link Response} with the given updated instance. */
+    public Mono<CachedResponse> updateResponse(@NotNull Response response) {
         this.response = response;
-        this.currentResponse = response;
-        this.busy = true;
-        this.deferred = false;
+        return Mono.just(this);
+    }
+
+    /** Replaces the navigation snapshot with the given updated state. */
+    public void setNavState(@NotNull NavState navState) {
+        this.navState = navState;
     }
 
     /**
-     * Creates a new {@link ResponseFollowup} entry, adds it to this cached response,
-     * and returns it.
-     *
-     * @param identifier the unique string identifier for the followup
-     * @param channelId the Discord channel snowflake
-     * @param userId the user snowflake
-     * @param messageId the Discord message snowflake of the followup
-     * @param response the followup response
-     * @return a mono emitting the newly created followup
+     * Records the current time as the last interaction, clears the dirty flag
+     * on the bound response, and transitions back to {@link State#IDLE}.
      */
-    public Mono<ResponseFollowup> addFollowup(@NotNull String identifier, @NotNull Snowflake channelId, @NotNull Snowflake userId, @NotNull Snowflake messageId, @NotNull Response response) {
-        ResponseFollowup responseFollowup = new ResponseFollowup(identifier, channelId, userId, messageId, response);
-        this.followups.add(responseFollowup);
-        return Mono.just(responseFollowup);
+    public Mono<CachedResponse> updateLastInteract() {
+        return Mono.fromRunnable(() -> {
+            this.response.setNoCacheUpdateRequired();
+            this.lastInteract = System.currentTimeMillis();
+            this.state = State.IDLE;
+        });
     }
 
     /**
-     * Checks whether a followup with the given identifier exists.
-     *
-     * @param identifier the followup identifier to search for
-     * @return {@code true} if a matching followup exists
+     * Updates this entry's response attachments from the given Discord
+     * message after a send/edit completes.
      */
-    public boolean containsFollowup(@NotNull String identifier) {
-        return this.getFollowups()
-            .stream()
-            .anyMatch(followup -> followup.getIdentifier().equals(identifier));
+    public Mono<CachedResponse> updateAttachments(@NotNull Message message) {
+        return Mono.fromRunnable(() -> this.response.updateAttachments(message));
     }
 
     /**
-     * Checks whether a followup with the given message snowflake exists.
-     *
-     * @param messageId the Discord message snowflake to search for
-     * @return {@code true} if a matching followup exists
+     * Synchronizes the Discord message's reactions with those declared on
+     * this entry's current page, removing stale reactions and adding any
+     * missing ones.
      */
-    public boolean containsFollowup(@NotNull Snowflake messageId) {
-        return this.getFollowups()
-            .stream()
-            .anyMatch(followup -> followup.getMessageId().equals(messageId));
+    public Mono<CachedResponse> updateReactions(@NotNull Message message) {
+        return Mono.just(message)
+            .checkpoint("CachedResponse#updateReactions Processing")
+            .flatMap(msg -> {
+                ConcurrentList<Emoji> newReactions = this.response
+                    .getHistoryHandler()
+                    .getCurrentPage()
+                    .getReactions();
+
+                ConcurrentList<Emoji> currentReactions = msg.getReactions()
+                    .stream()
+                    .filter(Reaction::selfReacted)
+                    .map(Reaction::getEmoji)
+                    .map(Emoji::of)
+                    .collect(Concurrent.toList());
+
+                Mono<Void> mono = Mono.empty();
+
+                if (currentReactions.stream().anyMatch(emoji -> !newReactions.contains(emoji)))
+                    mono = msg.removeAllReactions();
+
+                return mono.then(Mono.when(
+                    newReactions.stream()
+                        .map(emoji -> msg.addReaction(emoji.getD4jReaction()))
+                        .collect(Concurrent.toList())
+                ));
+            })
+            .thenReturn(this);
     }
 
-    /**
-     * Finds the first followup matching the given identifier.
-     *
-     * @param identifier the followup identifier to search for
-     * @return an optional containing the matching followup, or empty if
-     *         none exists
-     */
-    public Optional<ResponseFollowup> findFollowup(@NotNull String identifier) {
-        return this.getFollowups().findFirst(ResponseFollowup::getIdentifier, identifier);
+    /** Returns the active modal dialog for the given user, if one exists. */
+    public @NotNull Optional<Modal> getUserModal(@NotNull User user) {
+        return Optional.ofNullable(this.activeModals.getOrDefault(user.getId(), null));
     }
 
-    /**
-     * Finds the first followup matching the given message snowflake.
-     *
-     * @param messageId the Discord message snowflake to search for
-     * @return an optional containing the matching followup, or empty if
-     *         none exists
-     */
-    public Optional<ResponseFollowup> findFollowup(@NotNull Snowflake messageId) {
-        return this.getFollowups().findFirst(ResponseFollowup::getMessageId, messageId);
+    /** Associates a modal dialog with the given user for this entry. */
+    public void setUserModal(@NotNull User user, @NotNull Modal modal) {
+        this.activeModals.put(user.getId(), modal);
     }
 
-    /**
-     * Removes the followup with the given identifier, if it exists.
-     *
-     * @param identifier the followup identifier to remove
-     */
-    public void removeFollowup(@NotNull String identifier) {
-        this.followups.removeIf(followup -> followup.getIdentifier().equals(identifier));
-    }
-
-    /**
-     * Removes the active modal dialog for the given user.
-     *
-     * @param user the user whose modal should be cleared
-     */
+    /** Removes the active modal dialog for the given user. */
     public void clearModal(@NotNull User user) {
         this.activeModals.remove(user.getId());
     }
@@ -166,141 +322,158 @@ public final class CachedResponse implements ResponseEntry {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-
-        CachedResponse entry = (CachedResponse) o;
-
-        return Objects.equals(this.getChannelId(), entry.getChannelId())
-            && Objects.equals(this.getUserId(), entry.getUserId())
-            && Objects.equals(this.getMessageId(), entry.getMessageId())
-            && Objects.equals(this.getResponse(), entry.getResponse())
-            && Objects.equals(this.getCurrentResponse(), entry.getCurrentResponse())
-            && this.getLastInteract() == entry.getLastInteract()
-            && this.isBusy() == entry.isBusy()
-            && this.isDeferred() == entry.isDeferred()
-            && Objects.equals(this.getFollowups(), entry.getFollowups())
-            && Objects.equals(this.getActiveModals(), entry.getActiveModals());
-    }
-
-    /**
-     * Returns the active modal dialog for the given user, if one exists.
-     *
-     * @param user the user to look up
-     * @return an optional containing the user's active modal, or empty if
-     *         no modal is active
-     */
-    public @NotNull Optional<Modal> getUserModal(@NotNull User user) {
-        return Optional.ofNullable(this.activeModals.getOrDefault(user.getId(), null));
+        CachedResponse that = (CachedResponse) o;
+        return Objects.equals(this.uniqueId, that.uniqueId);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(this.getChannelId(), this.getUserId(), this.getMessageId(), this.getResponse(), this.getCurrentResponse(), this.getFollowups(), this.getActiveModals(), this.getLastInteract(), this.isBusy(), this.isDeferred());
+        return Objects.hashCode(this.uniqueId);
     }
 
     /**
-     * Checks whether this cached response or any of its followups match
-     * the given message and user snowflakes.
-     *
-     * @param messageId the Discord message snowflake to match
-     * @param userId the user snowflake to match
-     * @return {@code true} if both the user matches and the message matches
-     *         either this response or a followup
+     * Mutable builder for assembling a {@link CachedResponse}. Used by the
+     * locator implementations when promoting a sent message into the hot tier
+     * and when hydrating a persistent row from the cold tier.
      */
-    public boolean matchesMessage(@NotNull Snowflake messageId, @NotNull Snowflake userId) {
-        return this.getUserId().equals(userId) && (this.getMessageId().equals(messageId) || this.containsFollowup(messageId));
-    }
+    public static final class Builder {
 
-    /**
-     * Checks whether this cached response or any of its followups match
-     * the given message snowflake and user ID.
-     *
-     * @param messageId the Discord message snowflake to match
-     * @param userId the raw user ID to match
-     * @return {@code true} if both the user matches and the message matches
-     *         either this response or a followup
-     */
-    public boolean matchesMessage(@NotNull Snowflake messageId, @NotNull Id userId) {
-        return this.getUserId().asLong() == userId.asLong() && (this.getMessageId().equals(messageId) || this.containsFollowup(messageId));
-    }
+        private UUID uniqueId;
+        private Snowflake messageId;
+        private Snowflake channelId;
+        private Snowflake userId;
+        private Optional<Snowflake> guildId = Optional.empty();
+        private Optional<UUID> parentId = Optional.empty();
+        private Optional<String> followupIdentifier = Optional.empty();
+        private Optional<Class<?>> ownerClass = Optional.empty();
+        private Optional<String> builderId = Optional.empty();
+        private Instant createdAt = Instant.now();
+        private Optional<Instant> expiresAt = Optional.empty();
+        private Response response;
+        private State state = State.BUSY;
+        private long lastInteract = System.currentTimeMillis();
+        private NavState navState = NavState.empty();
 
-    /**
-     * Checks whether this response is currently busy or has not yet
-     * exceeded its time-to-live since the last interaction.
-     *
-     * @return {@code true} if the response is busy or not yet expired
-     * @see #getLastInteract()
-     * @see Response#getTimeToLive()
-     */
-    public boolean isActive() {
-        return this.isBusy() || System.currentTimeMillis() < this.getLastInteract() + (this.getResponse().getTimeToLive() * 1000L);
-    }
+        private Builder() {}
 
-    @Override
-    public boolean isFollowup() {
-        return false;
-    }
+        /** Sets the stable response identifier (typically {@link Response#getUniqueId()}). */
+        public @NotNull Builder withUniqueId(@NotNull UUID uniqueId) {
+            this.uniqueId = uniqueId;
+            return this;
+        }
 
-    /**
-     * Returns the inverse of {@link #isActive()}.
-     *
-     * @return {@code true} if this response is no longer active
-     */
-    public boolean notActive() {
-        return !this.isActive();
-    }
+        /** Sets the Discord message snowflake. */
+        public @NotNull Builder withMessageId(@NotNull Snowflake messageId) {
+            this.messageId = messageId;
+            return this;
+        }
 
-    /**
-     * Marks this response as busy, preventing it from being removed
-     * from the {@link ResponseHandler}.
-     */
-    public void setBusy() {
-        this.busy = true;
-    }
+        /** Sets the Discord channel snowflake. */
+        public @NotNull Builder withChannelId(@NotNull Snowflake channelId) {
+            this.channelId = channelId;
+            return this;
+        }
 
-    /**
-     * Marks this response as deferred, indicating that the initial reply
-     * acknowledgment has been sent to Discord.
-     */
-    public void setDeferred() {
-        this.deferred = true;
-    }
+        /** Sets the Discord user snowflake of the entry owner. */
+        public @NotNull Builder withUserId(@NotNull Snowflake userId) {
+            this.userId = userId;
+            return this;
+        }
 
-    /**
-     * Associates a modal dialog with the given user for this cached response.
-     *
-     * @param user the user presenting the modal
-     * @param modal the modal dialog to associate
-     */
-    public void setUserModal(@NotNull User user, @NotNull Modal modal) {
-        this.activeModals.put(user.getId(), modal);
-    }
+        /** Sets the Discord guild snowflake, or empty for direct-message contexts. */
+        public @NotNull Builder withGuildId(@NotNull Optional<Snowflake> guildId) {
+            this.guildId = guildId;
+            return this;
+        }
 
-    /**
-     * Records the current time as the last interaction, synchronizes the
-     * rendered snapshot, and clears the busy and deferred flags so the
-     * response becomes eligible for expiration.
-     *
-     * @return a mono emitting this cached response after the update
-     */
-    public Mono<CachedResponse> updateLastInteract() {
-        return Mono.fromRunnable(() -> {
-            this.currentResponse = this.response;
-            this.response.setNoCacheUpdateRequired();
-            this.lastInteract = System.currentTimeMillis();
-            this.busy = false;
-            this.deferred = false;
-        });
-    }
+        /** Marks this entry as a followup of the given parent {@code uniqueId}. */
+        public @NotNull Builder withParentId(@NotNull UUID parentId) {
+            this.parentId = Optional.of(parentId);
+            return this;
+        }
 
-    /**
-     * Replaces this entry's response with the given updated response.
-     *
-     * @param response the new response state
-     * @return a mono emitting this cached response
-     */
-    public Mono<CachedResponse> updateResponse(@NotNull Response response) {
-        this.response = response;
-        return Mono.just(this);
+        /** Sets the optional user-supplied followup identifier. */
+        public @NotNull Builder withFollowupIdentifier(@NotNull String identifier) {
+            this.followupIdentifier = Optional.of(identifier);
+            return this;
+        }
+
+        /** Sets the optional user-supplied followup identifier. */
+        public @NotNull Builder withFollowupIdentifier(@NotNull Optional<String> identifier) {
+            this.followupIdentifier = identifier;
+            return this;
+        }
+
+        /** Sets the persistent host class hosting the {@code @PersistentResponse} builder method. */
+        public @NotNull Builder withOwnerClass(@NotNull Class<?> ownerClass) {
+            this.ownerClass = Optional.of(ownerClass);
+            return this;
+        }
+
+        /** Sets the persistent host class via {@link Optional}. */
+        public @NotNull Builder withOwnerClass(@NotNull Optional<Class<?>> ownerClass) {
+            this.ownerClass = ownerClass;
+            return this;
+        }
+
+        /** Sets the {@code @PersistentResponse} builder discriminator id. */
+        public @NotNull Builder withBuilderId(@NotNull String builderId) {
+            this.builderId = Optional.of(builderId);
+            return this;
+        }
+
+        /** Sets the {@code @PersistentResponse} builder discriminator id via {@link Optional}. */
+        public @NotNull Builder withBuilderId(@NotNull Optional<String> builderId) {
+            this.builderId = builderId;
+            return this;
+        }
+
+        /** Sets the entry creation timestamp. */
+        public @NotNull Builder withCreatedAt(@NotNull Instant createdAt) {
+            this.createdAt = createdAt;
+            return this;
+        }
+
+        /** Sets the optional expiration timestamp. */
+        public @NotNull Builder withExpiresAt(@NotNull Optional<Instant> expiresAt) {
+            this.expiresAt = expiresAt;
+            return this;
+        }
+
+        /** Sets the bound {@link Response}. */
+        public @NotNull Builder withResponse(@NotNull Response response) {
+            this.response = response;
+            return this;
+        }
+
+        /** Sets the initial lifecycle state. Defaults to {@link State#BUSY}. */
+        public @NotNull Builder withState(@NotNull State state) {
+            this.state = state;
+            return this;
+        }
+
+        /** Sets the most recent interaction timestamp. */
+        public @NotNull Builder withLastInteract(long lastInteract) {
+            this.lastInteract = lastInteract;
+            return this;
+        }
+
+        /** Sets the persisted navigation snapshot. */
+        public @NotNull Builder withNavState(@NotNull NavState navState) {
+            this.navState = navState;
+            return this;
+        }
+
+        /** Constructs the immutable-shaped {@link CachedResponse}. */
+        public @NotNull CachedResponse build() {
+            Objects.requireNonNull(this.uniqueId, "uniqueId");
+            Objects.requireNonNull(this.messageId, "messageId");
+            Objects.requireNonNull(this.channelId, "channelId");
+            Objects.requireNonNull(this.userId, "userId");
+            Objects.requireNonNull(this.response, "response");
+            return new CachedResponse(this);
+        }
+
     }
 
 }

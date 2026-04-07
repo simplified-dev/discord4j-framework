@@ -4,7 +4,6 @@ import dev.sbs.discordapi.DiscordBot;
 import dev.sbs.discordapi.context.capability.ExceptionContext;
 import dev.sbs.discordapi.context.message.ReactionContext;
 import dev.sbs.discordapi.handler.response.CachedResponse;
-import dev.sbs.discordapi.handler.response.ResponseFollowup;
 import dev.sbs.discordapi.listener.DiscordListener;
 import dev.sbs.discordapi.response.Emoji;
 import dev.sbs.discordapi.response.Response;
@@ -21,8 +20,8 @@ import java.util.Optional;
 /**
  * Abstract base for reaction event listeners, providing the shared flow of
  * validating that the reaction targets a bot message from a non-bot user,
- * matching it against a {@link CachedResponse}'s registered reactions, and
- * dispatching to the reaction's interaction handler.
+ * matching it against a {@link CachedResponse}'s registered reactions via the
+ * response locator, and dispatching to the reaction's interaction handler.
  * <p>
  * Concrete subclasses ({@link ReactionAddListener}, {@link ReactionRemoveListener})
  * supply the {@link ReactionContext} with the appropriate {@link ReactionContext.Type}.
@@ -42,22 +41,25 @@ public abstract class ReactionListener<E extends ReactionUserEmojiEvent> extends
 
     @Override
     public Publisher<Void> apply(@NotNull E event) {
-        return Mono.just(event)
-            .filter(this::isBotMessage) // Only Bot Messages
-            .filter(this::notBot) // Ignore Other Bots
-            .thenMany(Flux.fromIterable(this.getDiscordBot().getResponseHandler()))
-            .filter(entry -> entry.matchesMessage(event.getMessageId(), event.getUserId())) // Validate Message & User ID
-            .singleOrEmpty()
-            .flatMap(entry -> {
-                final Emoji emoji = Emoji.of(event.getEmoji());
+        if (!this.isBotMessage(event) || this.isBot(event))
+            return Mono.empty();
 
-                return Flux.fromIterable(entry.getResponse().getHistoryHandler().getCurrentPage().getReactions())
-                    .filter(reaction -> reaction.equals(emoji))
-                    .singleOrEmpty()
-                    .flatMap(reaction -> this.handleInteraction(event, entry, reaction, entry.findFollowup(event.getMessageId())))
-                    .then(entry.updateLastInteract())
-                    .then();
-            });
+        return this.getDiscordBot().getResponseLocator().findByMessage(event.getMessageId())
+            .flatMap(opt -> opt
+                .filter(entry -> entry.getUserId().equals(event.getUserId()))
+                .map(entry -> {
+                    final Emoji emoji = Emoji.of(event.getEmoji());
+                    Optional<CachedResponse> followup = entry.isFollowup() ? Optional.of(entry) : Optional.empty();
+
+                    return Flux.fromIterable(entry.getResponse().getHistoryHandler().getCurrentPage().getReactions())
+                        .filter(reaction -> reaction.equals(emoji))
+                        .singleOrEmpty()
+                        .flatMap(reaction -> this.handleInteraction(event, entry, reaction, followup))
+                        .then(entry.updateLastInteract())
+                        .then();
+                })
+                .orElse(Mono.empty())
+            );
     }
 
     /**
@@ -69,19 +71,13 @@ public abstract class ReactionListener<E extends ReactionUserEmojiEvent> extends
      * @param followup the matched followup, if the reaction targets one
      * @return the constructed context
      */
-    protected abstract @NotNull ReactionContext getContext(@NotNull E event, @NotNull Response cachedMessage, @NotNull Emoji reaction, @NotNull Optional<ResponseFollowup> followup);
+    protected abstract @NotNull ReactionContext getContext(@NotNull E event, @NotNull Response cachedMessage, @NotNull Emoji reaction, @NotNull Optional<CachedResponse> followup);
 
     /**
      * Executes the reaction's registered interaction handler within an error-handling
      * pipeline, then edits the response if it was modified.
-     *
-     * @param event the Discord4J reaction event
-     * @param entry the matched response cache entry
-     * @param reaction the matched emoji
-     * @param followup the matched followup, if the reaction targets one
-     * @return a reactive pipeline completing when the interaction is handled
      */
-    private Mono<Void> handleInteraction(@NotNull E event, @NotNull CachedResponse entry, @NotNull Emoji reaction, @NotNull Optional<ResponseFollowup> followup) {
+    private Mono<Void> handleInteraction(@NotNull E event, @NotNull CachedResponse entry, @NotNull Emoji reaction, @NotNull Optional<CachedResponse> followup) {
         return Mono.just(this.getContext(event, entry.getResponse(), reaction, followup))
             .flatMap(context -> Mono.just(entry)
                 .onErrorResume(throwable -> this.getDiscordBot().getExceptionHandler().handleException(
@@ -99,22 +95,12 @@ public abstract class ReactionListener<E extends ReactionUserEmojiEvent> extends
             );
     }
 
-    /**
-     * Returns {@code true} if the reacting user is not a bot.
-     *
-     * @param event the reaction event
-     * @return {@code true} if the user is not a bot
-     */
-    private boolean notBot(@NotNull E event) {
-        return !event.getUser().blockOptional().map(User::isBot).orElse(true);
+    /** Returns {@code true} if the reacting user is a bot. */
+    private boolean isBot(@NotNull E event) {
+        return event.getUser().blockOptional().map(User::isBot).orElse(true);
     }
 
-    /**
-     * Returns {@code true} if the message that was reacted to was authored by a bot.
-     *
-     * @param event the reaction event
-     * @return {@code true} if the message author is a bot
-     */
+    /** Returns {@code true} if the reacted-to message was authored by a bot. */
     private boolean isBotMessage(@NotNull E event) {
         return event.getMessage().blockOptional().flatMap(Message::getAuthor).map(User::isBot).orElse(false);
     }

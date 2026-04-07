@@ -3,7 +3,7 @@ package dev.sbs.discordapi.context.component;
 import dev.sbs.discordapi.DiscordBot;
 import dev.sbs.discordapi.component.interaction.Modal;
 import dev.sbs.discordapi.context.scope.ComponentContext;
-import dev.sbs.discordapi.handler.response.ResponseFollowup;
+import dev.sbs.discordapi.handler.response.CachedResponse;
 import dev.sbs.discordapi.response.Response;
 import discord4j.core.event.domain.interaction.ModalSubmitInteractionEvent;
 import lombok.AccessLevel;
@@ -44,7 +44,7 @@ public interface ModalContext extends ComponentContext {
      * @param followup the associated followup, if any
      * @return a new modal context with updated component values
      */
-    static @NotNull ModalContext of(@NotNull DiscordBot discordBot, @NotNull ModalSubmitInteractionEvent event, @NotNull Response response, @NotNull Modal modal, @NotNull Optional<ResponseFollowup> followup) {
+    static @NotNull ModalContext of(@NotNull DiscordBot discordBot, @NotNull ModalSubmitInteractionEvent event, @NotNull Response response, @NotNull Modal modal, @NotNull Optional<CachedResponse> followup) {
         return new Impl(
             discordBot,
             event,
@@ -76,7 +76,7 @@ public interface ModalContext extends ComponentContext {
         private final @NotNull Modal component;
 
         /** The associated followup, if any. */
-        private final @NotNull Optional<ResponseFollowup> followup;
+        private final @NotNull Optional<CachedResponse> followup;
 
     }
 

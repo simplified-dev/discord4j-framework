@@ -7,7 +7,7 @@ import dev.sbs.discordapi.context.message.ReactionContext;
 import dev.sbs.discordapi.context.scope.InteractionContext;
 import dev.sbs.discordapi.context.scope.MessageContext;
 import dev.sbs.discordapi.handler.exception.ExceptionHandler;
-import dev.sbs.discordapi.handler.response.ResponseHandler;
+import dev.sbs.discordapi.handler.response.ResponseLocator;
 import dev.sbs.discordapi.response.Response;
 import discord4j.common.util.Snowflake;
 import discord4j.core.event.domain.Event;
@@ -139,11 +139,14 @@ public interface EventContext<T extends Event> {
 
     /**
      * Sends the given {@link Response} as a new message, registers it with the
-     * {@link ResponseHandler}, and updates its reactions, attachments, and last-interact
+     * {@link ResponseLocator}, and updates its reactions, attachments, and last-interact
      * timestamp.
      *
      * <p>
-     * Errors during message creation are forwarded to the {@link ExceptionHandler}.
+     * Persistence branching is internal to the locator: if {@code response.isPersistent()}
+     * the locator writes through to both the hot and cold tiers; otherwise it stores
+     * the entry in the hot tier only. Errors during message creation are forwarded
+     * to the {@link ExceptionHandler}.
      *
      * @param response the response to send
      * @return a {@link Mono} completing when the reply has been sent and cached
@@ -160,14 +163,8 @@ public interface EventContext<T extends Event> {
                 )
             ))
             .flatMap(message -> this.getDiscordBot()
-                .getResponseHandler()
-                .createAndGet(
-                    message.getChannelId(),
-                    this.getInteractUserId(),
-                    message.getId(),
-                    response
-                )
-                .updateResponse(response)
+                .getResponseLocator()
+                .store(message, this, response)
                 .flatMap(entry -> entry.updateReactions(message)
                     .then(entry.updateAttachments(message))
                     .then(entry.updateLastInteract())

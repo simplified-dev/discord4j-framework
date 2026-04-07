@@ -420,35 +420,44 @@ public final class DiscordExceptionHandler extends ExceptionHandler {
                     .ofType(MessageChannel.class)
                     .flatMap(messageChannel -> {
                         // Get Message ID
-                        Optional<Snowflake> messageId;
+                        Mono<Optional<Snowflake>> messageIdMono;
 
                         if (exceptionContext.getEventContext() instanceof MessageContext)
-                            messageId = Optional.of(((MessageContext<?>) exceptionContext.getEventContext()).getMessageId());
+                            messageIdMono = Mono.just(Optional.of(((MessageContext<?>) exceptionContext.getEventContext()).getMessageId()));
                         else
-                            messageId = this.getDiscordBot()
-                                .getResponseHandler()
-                                .findFirst(entry -> entry.getResponse().getUniqueId(), userErrorResponse.getUniqueId())
-                                .map(CachedResponse::getMessageId);
+                            messageIdMono = this.getDiscordBot()
+                                .getResponseLocator()
+                                .findByResponseId(userErrorResponse.getUniqueId())
+                                .map(opt -> opt.map(CachedResponse::getMessageId));
 
-                        // Build Exception Response
-                        Response logResponse = Response.builder()
-                            .withBot(exceptionContext.getDiscordBot())
-                            .withException(exceptionContext.getException())
-                            .withPages(
-                                TreePage.builder()
-                                    .withEmbeds(this.buildDeveloperError(exceptionContext, defaultError, messageId))
-                                    .build()
-                            )
-                            .build();
+                        return messageIdMono.flatMap(messageId -> {
+                            // Build Exception Response
+                            Response logResponse = Response.builder()
+                                .withBot(exceptionContext.getDiscordBot())
+                                .withException(exceptionContext.getException())
+                                .withPages(
+                                    TreePage.builder()
+                                        .withEmbeds(this.buildDeveloperError(exceptionContext, defaultError, messageId))
+                                        .build()
+                                )
+                                .build();
 
-                        return Mono.just(messageChannel)
-                            .publishOn(logResponse.getReactorScheduler())
-                            .flatMap(logResponse::getD4jCreateMono)
-                            .doOnNext(__ -> messageId.ifPresent(id -> this.getDiscordBot()
-                                .getResponseHandler()
-                                .removeIf(entry -> entry.getMessageId().equals(id))
-                            ))
-                            .then(Mono.empty());
+                            return Mono.just(messageChannel)
+                                .publishOn(logResponse.getReactorScheduler())
+                                .flatMap(logResponse::getD4jCreateMono)
+                                .flatMap(__ -> messageId
+                                    .map(id -> this.getDiscordBot()
+                                        .getResponseLocator()
+                                        .findByMessage(id)
+                                        .flatMap(entryOpt -> entryOpt
+                                            .map(entry -> this.getDiscordBot().getResponseLocator().remove(entry.getUniqueId()))
+                                            .orElse(Mono.empty())
+                                        )
+                                    )
+                                    .orElse(Mono.empty())
+                                )
+                                .then(Mono.empty());
+                        });
                     })
             ))
             .then(Mono.empty());

@@ -3,7 +3,7 @@ package dev.sbs.discordapi.listener.component;
 import dev.sbs.discordapi.DiscordBot;
 import dev.sbs.discordapi.component.interaction.SelectMenu;
 import dev.sbs.discordapi.context.component.SelectMenuContext;
-import dev.sbs.discordapi.handler.response.ResponseFollowup;
+import dev.sbs.discordapi.handler.response.CachedResponse;
 import dev.sbs.discordapi.response.Response;
 import discord4j.core.event.domain.interaction.SelectMenuInteractionEvent;
 import org.jetbrains.annotations.NotNull;
@@ -26,7 +26,7 @@ public final class SelectMenuListener extends ComponentListener<SelectMenuIntera
     }
 
     @Override
-    protected @NotNull SelectMenuContext getContext(@NotNull SelectMenuInteractionEvent event, @NotNull Response response, @NotNull SelectMenu component, @NotNull Optional<ResponseFollowup> followup) {
+    protected @NotNull SelectMenuContext getContext(@NotNull SelectMenuInteractionEvent event, @NotNull Response response, @NotNull SelectMenu component, @NotNull Optional<CachedResponse> followup) {
         return SelectMenuContext.of(
             this.getDiscordBot(),
             event,
