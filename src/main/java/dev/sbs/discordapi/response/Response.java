@@ -5,7 +5,6 @@ import dev.sbs.discordapi.component.Component;
 import dev.sbs.discordapi.component.media.Attachment;
 import dev.sbs.discordapi.component.media.MediaData;
 import dev.sbs.discordapi.component.scope.TopLevelMessageComponent;
-import dev.sbs.discordapi.context.EventContext;
 import dev.sbs.discordapi.context.scope.MessageContext;
 import dev.sbs.discordapi.response.embed.Embed;
 import dev.sbs.discordapi.response.embed.Field;
@@ -67,12 +66,14 @@ public final class Response {
 
     private final long buildTime = System.currentTimeMillis();
     private final @NotNull UUID uniqueId;
-    private final @NotNull EventContext<?> eventContext;
+    private final @NotNull DiscordBot discordBot;
     private final @NotNull Optional<Snowflake> referenceId;
     private final @NotNull Scheduler reactorScheduler;
     private final @NotNull AllowedMentions allowedMentions;
     private final int timeToLive;
     private final boolean ephemeral;
+    private final boolean persistent;
+    private final @NotNull Optional<String> persistentBuilderId;
     private final @NotNull ConcurrentList<Attachment> attachments;
     private final @NotNull Function<MessageContext<MessageCreateEvent>, Mono<Void>> createInteraction;
     private final boolean renderingPagingComponents;
@@ -87,13 +88,15 @@ public final class Response {
 
     public static @NotNull Builder from(@NotNull Response response) {
         return builder()
-            .withContext(response.getEventContext())
+            .withBot(response.getDiscordBot())
             .withUniqueId(response.getUniqueId())
             .withPages(response.getPages())
             .withAttachments(response.getAttachments())
             .withReference(response.getReferenceId())
             .withReactorScheduler(response.getReactorScheduler())
             .withTimeToLive(response.getTimeToLive())
+            .isPersistent(response.isPersistent())
+            .withPersistentBuilderId(response.getPersistentBuilderId())
             .isRenderingPagingComponents(response.isRenderingPagingComponents())
             .isEphemeral(response.isEphemeral())
             .withPageHistory(response.getHistoryHandler().getIdentifierHistory())
@@ -353,7 +356,7 @@ public final class Response {
         @BuildFlag(nonNull = true)
         private UUID uniqueId = UUID.randomUUID();
         @BuildFlag(nonNull = true)
-        private EventContext<?> eventContext;
+        private DiscordBot discordBot;
         @BuildFlag(notEmpty = true)
         private final ConcurrentList<Page> pages = Concurrent.newList();
         private final ConcurrentList<Attachment> attachments = Concurrent.newList();
@@ -363,6 +366,8 @@ public final class Response {
         private int timeToLive = 10;
         private boolean renderingPagingComponents = true;
         private boolean ephemeral = false;
+        private boolean persistent = false;
+        private Optional<String> persistentBuilderId = Optional.empty();
         @BuildFlag(nonNull = true)
         private AllowedMentions allowedMentions = AllowedMentions.suppressEveryone();
         private Optional<Function<MessageContext<MessageCreateEvent>, Mono<Void>>> createInteraction = Optional.empty();
@@ -381,13 +386,51 @@ public final class Response {
         }
 
         /**
-         * Sets the {@link EventContext} for the {@link Response}, providing access to the
-         * {@link DiscordBot} instance for emoji resolution and other bot operations.
+         * Binds this {@link Response} to a {@link DiscordBot} instance, required
+         * for emoji resolution, scheduler access, and pagination handler
+         * construction.
          *
-         * @param eventContext the event context
+         * @param discordBot the bot this response belongs to
          */
-        public Builder withContext(@NotNull EventContext<?> eventContext) {
-            this.eventContext = eventContext;
+        public Builder withBot(@NotNull DiscordBot discordBot) {
+            this.discordBot = discordBot;
+            return this;
+        }
+
+        /**
+         * Marks this {@link Response} as persistent, so that it is written to
+         * the cold tier of the
+         * {@link dev.sbs.discordapi.handler.response.ResponseLocator ResponseLocator}
+         * (JPA-backed) and survives bot restarts. Requires a matching
+         * {@link dev.sbs.discordapi.response.PersistentResponse @PersistentResponse}
+         * builder method on the dispatching command or
+         * {@link dev.sbs.discordapi.listener.PersistentComponentListener PersistentComponentListener}.
+         *
+         * @param persistent true to mark persistent
+         */
+        public Builder isPersistent(boolean persistent) {
+            this.persistent = persistent;
+            return this;
+        }
+
+        /**
+         * Sets the discriminator id for the owning {@code @PersistentResponse}
+         * method, used only when a single class hosts multiple builders.
+         *
+         * @param id the discriminator id matching the {@code @PersistentResponse(id)} value
+         */
+        public Builder withPersistentBuilderId(@NotNull String id) {
+            return this.withPersistentBuilderId(Optional.of(id));
+        }
+
+        /**
+         * Sets the discriminator id for the owning {@code @PersistentResponse}
+         * method, used only when a single class hosts multiple builders.
+         *
+         * @param id an optional discriminator id
+         */
+        public Builder withPersistentBuilderId(@NotNull Optional<String> id) {
+            this.persistentBuilderId = id;
             return this;
         }
 
@@ -700,12 +743,14 @@ public final class Response {
 
             Response response = new Response(
                 this.uniqueId,
-                this.eventContext,
+                this.discordBot,
                 this.referenceId,
                 this.reactorScheduler,
                 this.allowedMentions,
                 this.timeToLive,
                 this.ephemeral,
+                this.persistent,
+                this.persistentBuilderId,
                 this.attachments,
                 this.createInteraction.orElse(__ -> Mono.empty()),
                 this.renderingPagingComponents,
@@ -714,7 +759,7 @@ public final class Response {
                     .withMatcher((page, identifier) -> page.getOption().getValue().equals(identifier))
                     .withTransformer(page -> page.getOption().getValue())
                     .build(),
-                new PaginationHandler(this.eventContext.getDiscordBot())
+                new PaginationHandler(this.discordBot)
             );
 
             // Navigation state restoration

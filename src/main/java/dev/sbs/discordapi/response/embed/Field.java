@@ -62,9 +62,9 @@ public final class Field {
 
     public static @NotNull Builder from(@NotNull Triple<String, String, Boolean> triple) {
         return builder()
-            .withName(triple.getLeft())
-            .withValue(triple.getMiddle())
-            .isInline(triple.getRight());
+            .withName(triple.left())
+            .withValue(triple.middle())
+            .isInline(triple.right());
     }
 
     public @NotNull EmbedCreateFields.Field getD4jField() {

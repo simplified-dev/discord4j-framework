@@ -294,7 +294,7 @@ public final class DiscordExceptionHandler extends ExceptionHandler {
         }
 
         // Build Log Channel Embed
-        Embed.Builder logErrorBuilder = defaultError.getRight()
+        Embed.Builder logErrorBuilder = defaultError.right()
             .mutate()
             .clearFields()
             .withField(
@@ -302,7 +302,7 @@ public final class DiscordExceptionHandler extends ExceptionHandler {
                 (!exceptionContext.isPrivateChannel() && messageId.isPresent()) ?
                     String.format(
                         "[%s](%s)",
-                        defaultError.getLeft(),
+                        defaultError.left(),
                         String.format(
                             "https://discord.com/channels/%s/%s/%s",
                             exceptionContext.getGuildId().map(Snowflake::asString).orElse("@me"),
@@ -310,7 +310,7 @@ public final class DiscordExceptionHandler extends ExceptionHandler {
                             messageId.get().asString()
                         )
                     ) :
-                    defaultError.getLeft()
+                    defaultError.left()
             )
             .withFields(
                 Field.builder()
@@ -378,7 +378,7 @@ public final class DiscordExceptionHandler extends ExceptionHandler {
         Optional<Embed> userReactiveError = this.buildReactiveUserError(exceptionContext);
 
         // Load User Error
-        Embed userError = userReactiveError.orElse(defaultError.getRight());
+        Embed userError = userReactiveError.orElse(defaultError.right());
 
         // Modify Command Errors
         if (exceptionContext.getEventContext() instanceof CommandContext<?> commandContext) {
@@ -399,7 +399,7 @@ public final class DiscordExceptionHandler extends ExceptionHandler {
 
         // Build User Error
         Response userErrorResponse = Response.builder()
-            .withContext(exceptionContext)
+            .withBot(exceptionContext.getDiscordBot())
             .isEphemeral(true)
             .withPages(
                 TreePage.builder()
@@ -432,7 +432,7 @@ public final class DiscordExceptionHandler extends ExceptionHandler {
 
                         // Build Exception Response
                         Response logResponse = Response.builder()
-                            .withContext(exceptionContext)
+                            .withBot(exceptionContext.getDiscordBot())
                             .withException(exceptionContext.getException())
                             .withPages(
                                 TreePage.builder()

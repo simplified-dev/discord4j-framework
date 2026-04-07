@@ -55,12 +55,12 @@ import java.util.function.Function;
 public interface EventContext<T extends Event> {
 
     /**
-     * Creates a new {@link Response.Builder} pre-wired with this context.
+     * Creates a new {@link Response.Builder} pre-wired with this context's bot.
      *
      * @return the pre-wired response builder
      */
     default @NotNull Response.Builder buildResponse() {
-        return Response.builder().withContext(this);
+        return Response.builder().withBot(this.getDiscordBot());
     }
 
     /**

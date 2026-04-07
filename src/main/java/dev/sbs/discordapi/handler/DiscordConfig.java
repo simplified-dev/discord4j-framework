@@ -6,9 +6,11 @@ import dev.sbs.discordapi.listener.BotEventListener;
 import dev.sbs.discordapi.listener.DiscordListener;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentSet;
+import dev.simplified.persistence.JpaConfig;
 import dev.simplified.reflection.Reflection;
 import dev.simplified.reflection.builder.BuildFlag;
 import dev.simplified.reflection.info.ResourceInfo;
+import dev.simplified.util.Logging;
 import dev.simplified.yaml.annotation.Flag;
 import discord4j.core.event.domain.Event;
 import discord4j.core.object.presence.ClientPresence;
@@ -19,8 +21,8 @@ import discord4j.rest.util.AllowedMentions;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import dev.simplified.util.Logging;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Optional;
 import java.util.function.Function;
@@ -36,6 +38,7 @@ public final class DiscordConfig {
     private final @NotNull Optional<Long> logChannelId;
     @Flag(secure = true)
     private final @NotNull Optional<String> sentryDsn;
+    private final @NotNull Optional<JpaConfig> jpaConfig;
     private final ConcurrentSet<Class<? extends DiscordListener>> listeners;
     private final ConcurrentSet<Class<? extends BotEventListener>> botEventListeners;
     private final ConcurrentSet<Class<DiscordCommand>> commands;
@@ -65,6 +68,7 @@ public final class DiscordConfig {
         private Optional<Long> logChannelId = Optional.empty();
         @Flag(secure = true)
         private Optional<String> sentryDsn = Optional.empty();
+        private Optional<JpaConfig> jpaConfig = Optional.empty();
 
         // Collections
         private ConcurrentSet<Class<? extends DiscordListener>> listeners = Concurrent.newSet();
@@ -140,6 +144,15 @@ public final class DiscordConfig {
 
         public Builder withSentryDsn(@NotNull Optional<String> sentryDsn) {
             this.sentryDsn = sentryDsn;
+            return this;
+        }
+
+        public Builder withJpaConfig(@Nullable JpaConfig jpaConfig) {
+            return this.withJpaConfig(Optional.ofNullable(jpaConfig));
+        }
+
+        public Builder withJpaConfig(@NotNull Optional<JpaConfig> jpaConfig) {
+            this.jpaConfig = jpaConfig;
             return this;
         }
 
@@ -223,6 +236,7 @@ public final class DiscordConfig {
                 this.mainGuildId.orElseThrow(),
                 this.logChannelId,
                 this.sentryDsn,
+                this.jpaConfig,
                 this.listeners.toUnmodifiableSet(),
                 this.botEventListeners.toUnmodifiableSet(),
                 this.commands.toUnmodifiableSet(),

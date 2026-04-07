@@ -166,7 +166,7 @@ public final class ComponentItemHandler<T> implements ItemHandler<T> {
                         .stream()
                         .anyMatch(predicate -> predicate.test(item, search.getLastMatch().orElseThrow()))
                     )
-                    .map(Triple::getMiddle)
+                    .map(Triple::middle)
                     .findFirst()
                 )
                 .filter(index -> index > -1)
@@ -254,7 +254,7 @@ public final class ComponentItemHandler<T> implements ItemHandler<T> {
                     .stream()
                     .allMatch(filter -> filter.test(t, index, size))
                 )
-                .map(Triple::getLeft)
+                .map(Triple::left)
                 .collect(Concurrent.toUnmodifiableList());
 
             this.variables.put("TOTAL_SIZE", this.getItems().size());

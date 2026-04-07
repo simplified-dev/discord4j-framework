@@ -41,6 +41,7 @@ dependencies {
     api("com.github.simplified-dev:scheduler:master-SNAPSHOT")
     api("com.github.simplified-dev:yaml:master-SNAPSHOT")
     api("com.github.simplified-dev:client:master-SNAPSHOT")
+    api("com.github.simplified-dev:persistence:master-SNAPSHOT")
 
     implementation(libs.sentry)
 }

@@ -42,7 +42,7 @@ public class DebugItemsCommand extends DiscordCommand<SlashCommandContext> {
     protected @NotNull Mono<Void> process(@NotNull SlashCommandContext commandContext) throws DiscordException {
         return commandContext.reply(
             Response.builder()
-                .withContext(commandContext)
+                .withBot(commandContext.getDiscordBot())
                 .withTimeToLive(60)
                 .withPages(
                     Page.builder()

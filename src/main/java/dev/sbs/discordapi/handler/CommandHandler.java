@@ -486,27 +486,27 @@ public final class CommandHandler extends DiscordReference {
                 getAnnotation(Structure.class, commandClass)
             ))
             .filter(commandLink -> {
-                if (commandLink.getRight().isEmpty()) {
-                    this.getLog().warn("'{}' is missing the @CommandStructure annotation, ignoring.", commandLink.getLeft().getName());
+                if (commandLink.right().isEmpty()) {
+                    this.getLog().warn("'{}' is missing the @CommandStructure annotation, ignoring.", commandLink.left().getName());
                     return false;
                 }
 
                 return true;
             })
-            .filter(StreamUtil.distinctByKey(Pair::getRight))
+            .filter(StreamUtil.distinctByKey(Pair::right))
             .map(commandLink -> Pair.of(
-                commandLink.getLeft(),
-                new Reflection<>(commandLink.getLeft()).newInstance(discordBot)
+                commandLink.left(),
+                new Reflection<>(commandLink.left()).newInstance(discordBot)
             ))
             .filter(commandEntry -> {
-                if (!validCommandPattern.matcher(commandEntry.getRight().getStructure().name()).matches()) {
-                    this.getLog().info("The command name of '{}' ('{}') must only contain english characters!", commandEntry.getLeft().getName(), commandEntry.getRight().getStructure().name());
+                if (!validCommandPattern.matcher(commandEntry.right().getStructure().name()).matches()) {
+                    this.getLog().info("The command name of '{}' ('{}') must only contain english characters!", commandEntry.left().getName(), commandEntry.right().getStructure().name());
                     return false;
                 }
 
                 return true;
             })
-            .map(Pair::getRight)
+            .map(Pair::right)
             .collect(Concurrent.toList());
     }
 
