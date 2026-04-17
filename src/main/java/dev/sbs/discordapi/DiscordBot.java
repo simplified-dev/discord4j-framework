@@ -24,6 +24,7 @@ import dev.sbs.discordapi.exception.DiscordGatewayException;
 import dev.sbs.discordapi.handler.CommandHandler;
 import dev.sbs.discordapi.handler.DiscordConfig;
 import dev.sbs.discordapi.handler.EmojiHandler;
+import dev.sbs.discordapi.handler.LocaleHandler;
 import dev.sbs.discordapi.handler.PersistentComponentHandler;
 import dev.sbs.discordapi.handler.exception.CompositeExceptionHandler;
 import dev.sbs.discordapi.handler.exception.DiscordExceptionHandler;
@@ -150,6 +151,7 @@ public abstract class DiscordBot {
     // Handlers
     private final @NotNull ExceptionHandler exceptionHandler;
     private final @NotNull EmojiHandler emojiHandler;
+    private final @NotNull LocaleHandler localeHandler;
     private final @NotNull CommandHandler commandHandler;
     private final @NotNull Optional<JpaSession> jpaSession;
     private final @NotNull InMemoryResponseLocator hotTier;
@@ -168,10 +170,12 @@ public abstract class DiscordBot {
         this.config = config;
         this.exceptionHandler = this.buildExceptionHandler();
         this.emojiHandler = new EmojiHandler(this);
+        this.localeHandler = new LocaleHandler(this);
         Logging.setRootLevel(this.getConfig().getLogLevel());
 
         this.commandHandler = CommandHandler.builder(this)
             .withCommands(this.getConfig().getCommands())
+            .withLocaleHandler(this.localeHandler)
             .build();
 
         // Build response locator: hot tier always, with optional cold tier

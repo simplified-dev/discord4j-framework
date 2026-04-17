@@ -35,6 +35,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.BiPredicate;
@@ -71,6 +72,9 @@ public final class CommandHandler extends DiscordReference {
     /** Mapping from command class to its Discord-assigned application command ID. */
     private final @NotNull ConcurrentMap<Class<? extends DiscordCommand>, Long> commandIds = Concurrent.newMap();
 
+    /** Source of localization overrides injected into every command spec. */
+    private final @NotNull LocaleHandler localeHandler;
+
     /** All validated and de-duplicated command instances. */
     @Getter private final @NotNull ConcurrentList<DiscordCommand> loadedCommands;
 
@@ -89,15 +93,19 @@ public final class CommandHandler extends DiscordReference {
      *
      * @param discordBot the bot this handler belongs to
      * @param commands the set of command classes discovered via classpath scanning
+     * @param localeHandler the locale handler consulted while building command specs
      */
     CommandHandler(
         @NotNull DiscordBot discordBot,
-        @NotNull ConcurrentSet<Class<DiscordCommand>> commands
+        @NotNull ConcurrentSet<Class<DiscordCommand>> commands,
+        @NotNull LocaleHandler localeHandler
     ) {
         super(discordBot);
+        this.localeHandler = localeHandler;
 
         this.getLog().info("Validating Commands");
         this.loadedCommands = this.validateCommands(discordBot, commands);
+        this.localeHandler.applyProgrammaticOverrides(this.loadedCommands);
 
         this.getLog().info("Filtering Commands");
         this.slashCommands = this.retrieveTypedCommands(
@@ -164,21 +172,7 @@ public final class CommandHandler extends DiscordReference {
                                 .map(command -> command.getStructure().group())
                                 .filter(group -> StringUtil.isNotEmpty(group.name()))
                                 .filter(StreamUtil.distinctByKey(Structure.Group::name))
-                                .map(group -> ApplicationCommandOptionData.builder()
-                                    .type(ApplicationCommandOption.Type.SUB_COMMAND_GROUP.getValue())
-                                    .name(group.name().toLowerCase())
-                                    .description(group.description())
-                                    .addAllOptions(
-                                        this.getSlashCommands()
-                                            .stream()
-                                            .filter(command -> parent.name().equalsIgnoreCase(command.getStructure().parent().name()))
-                                            .filter(command -> group.name().equalsIgnoreCase(command.getStructure().group().name()))
-                                            .filter(command -> command.getStructure().guildId() == guildId)
-                                            .map(this::buildSubCommand)
-                                            .collect(Concurrent.toList())
-                                    )
-                                    .build()
-                                )
+                                .map(group -> this.buildGroup(parent, group, guildId))
                                 .collect(Concurrent.toList())
                         )
                         // Handle SubCommands
@@ -199,19 +193,42 @@ public final class CommandHandler extends DiscordReference {
                     .filter(command -> StringUtil.isEmpty(command.getStructure().parent().name()))
                     .filter(command -> StringUtil.isEmpty(command.getStructure().group().name()))
                     .filter(command -> command.getStructure().guildId() == guildId)
-                    .map(command -> this.buildCommand(command)
-                        // Handle Parameters
-                        .addAllOptions(
-                            command.getParameters()
-                                .stream()
-                                .map(this::buildParameter)
-                                .collect(Concurrent.toList())
-                        )
-                        .build()
-                    )
+                    .map(command -> {
+                        String commandPath = pathOf(command);
+                        return this.buildCommand(command)
+                            // Handle Parameters
+                            .addAllOptions(
+                                command.getParameters()
+                                    .stream()
+                                    .map(parameter -> this.buildParameter(commandPath, parameter))
+                                    .collect(Concurrent.toList())
+                            )
+                            .build();
+                    })
             )
             .map(ApplicationCommandRequest.class::cast)
             .collect(Concurrent.toUnmodifiableList());
+    }
+
+    /**
+     * Returns the canonical lowercased dot-separated path for the given
+     * command: {@code [parent.][group.]name}. The path is the natural key
+     * used to look up localization overrides in {@link LocaleHandler}.
+     *
+     * @param command the command to compute a path for
+     * @return the canonical command path
+     */
+    private static @NotNull String pathOf(@NotNull DiscordCommand command) {
+        Structure structure = command.getStructure();
+        StringBuilder builder = new StringBuilder();
+
+        if (StringUtil.isNotEmpty(structure.parent().name()))
+            builder.append(structure.parent().name().toLowerCase()).append('.');
+
+        if (StringUtil.isNotEmpty(structure.group().name()))
+            builder.append(structure.group().name().toLowerCase()).append('.');
+
+        return builder.append(structure.name().toLowerCase()).toString();
     }
 
     /**
@@ -222,10 +239,13 @@ public final class CommandHandler extends DiscordReference {
      * @return a pre-configured request builder
      */
     private @NotNull ImmutableApplicationCommandRequest.Builder buildParentCommand(@NotNull Structure.Parent parent) {
+        String path = parent.name().toLowerCase();
         return ApplicationCommandRequest.builder()
             .type(ApplicationCommand.Type.CHAT_INPUT.getValue())
             .name(parent.name())
-            .description(parent.description());
+            .description(parent.description())
+            .nameLocalizationsOrNull(nullIfEmpty(this.localeHandler.getCommandNameLocalizations(path)))
+            .descriptionLocalizationsOrNull(nullIfEmpty(this.localeHandler.getCommandDescriptionLocalizations(path)));
     }
 
     /**
@@ -237,14 +257,53 @@ public final class CommandHandler extends DiscordReference {
      * @return a pre-configured request builder
      */
     private @NotNull ImmutableApplicationCommandRequest.Builder buildCommand(@NotNull DiscordCommand command) {
+        String path = pathOf(command);
         return ApplicationCommandRequest.builder()
             .type(command.getType().getValue())
             .name(command.getStructure().name())
             .description(command.getStructure().description())
+            .nameLocalizationsOrNull(nullIfEmpty(this.localeHandler.getCommandNameLocalizations(path)))
+            .descriptionLocalizationsOrNull(nullIfEmpty(this.localeHandler.getCommandDescriptionLocalizations(path)))
             .nsfw(command.getStructure().nsfw())
             .defaultMemberPermissions(String.valueOf(PermissionSet.of(command.getStructure().userPermissions()).getRawValue()))
             .integrationTypes(DiscordCommand.Install.intValues(command.getStructure().integrations()))
             .contexts(DiscordCommand.Access.intValues(command.getStructure().contexts()));
+    }
+
+    /**
+     * Builds an {@link ApplicationCommandOptionData} of type
+     * {@code SUB_COMMAND_GROUP} for the given parent/group pair, populating
+     * nested subcommand options and localization maps.
+     *
+     * @param parent the owning parent command structure
+     * @param group the subcommand group structure
+     * @param guildId the guild ID being built for, or {@code -1} for global
+     * @return the subcommand group option data
+     */
+    private @NotNull ApplicationCommandOptionData buildGroup(
+        @NotNull Structure.Parent parent,
+        @NotNull Structure.Group group,
+        long guildId
+    ) {
+        String parentPath = parent.name().toLowerCase();
+        String groupName = group.name().toLowerCase();
+
+        return ApplicationCommandOptionData.builder()
+            .type(ApplicationCommandOption.Type.SUB_COMMAND_GROUP.getValue())
+            .name(groupName)
+            .description(group.description())
+            .nameLocalizationsOrNull(nullIfEmpty(this.localeHandler.getOptionNameLocalizations(parentPath, groupName)))
+            .descriptionLocalizationsOrNull(nullIfEmpty(this.localeHandler.getOptionDescriptionLocalizations(parentPath, groupName)))
+            .addAllOptions(
+                this.getSlashCommands()
+                    .stream()
+                    .filter(command -> parent.name().equalsIgnoreCase(command.getStructure().parent().name()))
+                    .filter(command -> group.name().equalsIgnoreCase(command.getStructure().group().name()))
+                    .filter(command -> command.getStructure().guildId() == guildId)
+                    .map(this::buildSubCommand)
+                    .collect(Concurrent.toList())
+            )
+            .build();
     }
 
     /**
@@ -256,14 +315,21 @@ public final class CommandHandler extends DiscordReference {
      * @return the subcommand option data
      */
     private @NotNull ApplicationCommandOptionData buildSubCommand(@NotNull DiscordCommand<SlashCommandContext> command) {
+        String commandPath = pathOf(command);
+        int lastDot = commandPath.lastIndexOf('.');
+        String parentPath = lastDot > 0 ? commandPath.substring(0, lastDot) : commandPath;
+        String subName = command.getStructure().name().toLowerCase();
+
         return ApplicationCommandOptionData.builder()
             .type(ApplicationCommandOption.Type.SUB_COMMAND.getValue())
             .name(command.getStructure().name())
             .description(command.getStructure().description())
+            .nameLocalizationsOrNull(nullIfEmpty(this.localeHandler.getOptionNameLocalizations(parentPath, subName)))
+            .descriptionLocalizationsOrNull(nullIfEmpty(this.localeHandler.getOptionDescriptionLocalizations(parentPath, subName)))
             .addAllOptions(
                 command.getParameters()
                     .stream()
-                    .map(this::buildParameter)
+                    .map(parameter -> this.buildParameter(commandPath, parameter))
                     .collect(Concurrent.toList())
             )
             .build();
@@ -273,16 +339,21 @@ public final class CommandHandler extends DiscordReference {
      * Converts a {@link Parameter} into an {@link ApplicationCommandOptionData},
      * mapping type, name, description, required flag, channel type
      * constraints, size/length limits, autocomplete flag, and static
-     * choices.
+     * choices. Localization overrides for the parameter and each choice
+     * are resolved from the {@link LocaleHandler}.
      *
+     * @param commandPath the canonical path of the owning command,
+     *                    used as the prefix for localization lookups
      * @param parameter the command parameter to convert
      * @return the application command option data
      */
-    private @NotNull ApplicationCommandOptionData buildParameter(@NotNull Parameter parameter) {
+    private @NotNull ApplicationCommandOptionData buildParameter(@NotNull String commandPath, @NotNull Parameter parameter) {
         return ApplicationCommandOptionData.builder()
             .type(parameter.getType().getOptionType().getValue())
             .name(parameter.getName())
             .description(parameter.getDescription())
+            .nameLocalizationsOrNull(nullIfEmpty(this.localeHandler.getOptionNameLocalizations(commandPath, parameter.getName())))
+            .descriptionLocalizationsOrNull(nullIfEmpty(this.localeHandler.getOptionDescriptionLocalizations(commandPath, parameter.getName())))
             .required(parameter.isRequired())
             .channelTypes(
                 parameter.getChannelTypes()
@@ -301,11 +372,25 @@ public final class CommandHandler extends DiscordReference {
                     .map(entry -> ApplicationCommandOptionChoiceData.builder()
                         .name(entry.getKey())
                         .value(entry.getValue())
+                        .nameLocalizationsOrNull(nullIfEmpty(this.localeHandler.getChoiceNameLocalizations(commandPath, parameter.getName(), entry.getKey())))
                         .build()
                     )
                     .collect(Concurrent.toList())
             )
             .build();
+    }
+
+    /**
+     * Returns {@code null} if the given map is empty, otherwise returns the
+     * map itself. Used to pass localization overrides through the
+     * Discord4J {@code *OrNull} builder methods without sending empty
+     * maps on commands with no translations.
+     *
+     * @param map the localization map
+     * @return the same map if non-empty, otherwise {@code null}
+     */
+    private static Map<String, String> nullIfEmpty(@NotNull Map<String, String> map) {
+        return map.isEmpty() ? null : map;
     }
 
     /**
@@ -519,6 +604,7 @@ public final class CommandHandler extends DiscordReference {
 
         private final DiscordBot discordBot;
         private final ConcurrentSet<Class<DiscordCommand>> commands = Concurrent.newSet();
+        private LocaleHandler localeHandler;
 
         /**
          * Adds the given command classes to the set of commands to register.
@@ -542,15 +628,31 @@ public final class CommandHandler extends DiscordReference {
         }
 
         /**
+         * Sets the locale handler consulted while building every command spec.
+         *
+         * @param localeHandler the locale handler
+         * @return this builder for chaining
+         */
+        public Builder withLocaleHandler(@NotNull LocaleHandler localeHandler) {
+            this.localeHandler = localeHandler;
+            return this;
+        }
+
+        /**
          * Builds a new {@link CommandHandler} with the accumulated command
          * classes.
          *
          * @return the constructed command handler
+         * @throws IllegalStateException if no {@link LocaleHandler} was supplied
          */
         public @NotNull CommandHandler build() {
+            if (this.localeHandler == null)
+                throw new IllegalStateException("LocaleHandler is required");
+
             return new CommandHandler(
                 this.discordBot,
-                this.commands
+                this.commands,
+                this.localeHandler
             );
         }
 

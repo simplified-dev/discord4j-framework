@@ -5,16 +5,22 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Optional;
+
 /**
  * Enumeration of all locales supported by the Discord API for
- * internationalization of command names, descriptions, and other
- * user-facing strings.
+ * internationalization of command names, descriptions, option names,
+ * option descriptions, and choice names.
  *
  * <p>
  * Each constant maps a BCP 47 language tag ({@link #getShortName()})
- * to its native display name ({@link #getNativeName()}).
+ * to its native display name ({@link #getNativeName()}). The short
+ * name is the value Discord expects as a key in the
+ * {@code name_localizations} and {@code description_localizations}
+ * maps on application command payloads.
  *
- * @see <a href="https://discord.com/developers/docs/reference#locales">Discord Locales</a>
+ * @see <a href="https://discord.com/developers/docs/reference#locales">Discord Reference - Locales</a>
+ * @see <a href="https://discord.com/developers/docs/interactions/application-commands#localization">Application Commands - Localization</a>
  */
 @Getter
 @RequiredArgsConstructor
@@ -65,6 +71,21 @@ public enum DiscordLocale {
      */
     public @NotNull String getLanguageName() {
         return StringUtil.capitalizeFully(this.name().replace("_", " "));
+    }
+
+    /**
+     * Resolves a {@link DiscordLocale} from its BCP 47 short name, matched
+     * case-insensitively.
+     *
+     * @param shortName the BCP 47 language tag to resolve
+     * @return the matching locale, or empty if no constant matches
+     */
+    public static @NotNull Optional<DiscordLocale> byShortName(@NotNull String shortName) {
+        for (DiscordLocale locale : values()) {
+            if (locale.shortName.equalsIgnoreCase(shortName))
+                return Optional.of(locale);
+        }
+        return Optional.empty();
     }
 
 }

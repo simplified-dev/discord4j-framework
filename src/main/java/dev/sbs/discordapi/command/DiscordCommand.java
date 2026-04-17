@@ -16,6 +16,7 @@ import dev.sbs.discordapi.context.command.UserCommandContext;
 import dev.sbs.discordapi.context.scope.CommandContext;
 import dev.sbs.discordapi.exception.DiscordException;
 import dev.sbs.discordapi.handler.DispatchingClassContextKey;
+import dev.sbs.discordapi.handler.locale.LocaleEntry;
 import dev.sbs.discordapi.util.DiscordReference;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentList;
@@ -174,6 +175,22 @@ public abstract class DiscordCommand<C extends CommandContext<?>> extends Discor
      */
     public @NotNull ConcurrentUnmodifiableList<Parameter> getParameters() {
         return Concurrent.newUnmodifiableList();
+    }
+
+    /**
+     * Returns programmatic locale overrides for this command, merged into the
+     * {@link dev.sbs.discordapi.handler.LocaleHandler} after classpath JSON is
+     * loaded. Programmatic entries take precedence over classpath entries when
+     * their {@code (target, path, locale)} triple collides.
+     *
+     * <p>
+     * The default implementation returns an empty list. Override to supply
+     * runtime or computed translations without authoring a JSON file.
+     *
+     * @return locale entries to register for this command
+     */
+    public @NotNull ConcurrentList<LocaleEntry> getLocaleOverrides() {
+        return Concurrent.newList();
     }
 
     /**
