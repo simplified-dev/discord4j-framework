@@ -61,29 +61,24 @@ public final class CompositeResponseLocator implements ResponseLocator {
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findByMessage(@NotNull Snowflake messageId) {
+    public Mono<CachedResponse> findByMessage(@NotNull Snowflake messageId) {
         return this.hot.findByMessage(messageId);
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findForInteraction(@NotNull ComponentInteractionEvent event) {
+    public Mono<CachedResponse> findForInteraction(@NotNull ComponentInteractionEvent event) {
         return this.hot.findByMessage(event.getMessageId())
-            .flatMap(opt -> opt.isPresent()
-                ? Mono.just(opt)
-                : this.hydrateFromCold(event)
-            );
+            .switchIfEmpty(this.hydrateFromCold(event));
     }
 
     /**
      * Loads a persistent row by message id and reconstructs a
      * {@link CachedResponse} by invoking the registered builder method.
      */
-    private Mono<Optional<CachedResponse>> hydrateFromCold(@NotNull ComponentInteractionEvent event) {
+    private Mono<CachedResponse> hydrateFromCold(@NotNull ComponentInteractionEvent event) {
         return this.cold.findEntityByMessage(event.getMessageId())
-            .flatMap(opt -> opt
-                .map(entity -> this.materializeEntity(event, entity).map(Optional::of))
-                .orElseGet(() -> Mono.just(Optional.empty()))
-            );
+            .flatMap(Mono::justOrEmpty)
+            .flatMap(entity -> this.materializeEntity(event, entity));
     }
 
     /**
@@ -152,17 +147,17 @@ public final class CompositeResponseLocator implements ResponseLocator {
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findByResponseId(@NotNull UUID responseId) {
+    public Mono<CachedResponse> findByResponseId(@NotNull UUID responseId) {
         return this.hot.findByResponseId(responseId);
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findFollowupByIdentifier(@NotNull UUID parentId, @NotNull String identifier) {
+    public Mono<CachedResponse> findFollowupByIdentifier(@NotNull UUID parentId, @NotNull String identifier) {
         return this.hot.findFollowupByIdentifier(parentId, identifier);
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findFollowupByMessage(@NotNull UUID parentId, @NotNull Snowflake messageId) {
+    public Mono<CachedResponse> findFollowupByMessage(@NotNull UUID parentId, @NotNull Snowflake messageId) {
         return this.hot.findFollowupByMessage(parentId, messageId);
     }
 
@@ -195,12 +190,11 @@ public final class CompositeResponseLocator implements ResponseLocator {
     @Override
     public Mono<Void> remove(@NotNull UUID responseId) {
         return this.hot.findByResponseId(responseId)
-            .flatMap(opt -> {
+            .map(CachedResponse::isPersistent)
+            .defaultIfEmpty(false)
+            .flatMap(persistent -> {
                 Mono<Void> hotRemove = this.hot.remove(responseId);
-                Mono<Void> coldRemove = opt.filter(CachedResponse::isPersistent).isPresent()
-                    ? this.cold.deleteEntry(responseId)
-                    : Mono.empty();
-                return hotRemove.then(coldRemove);
+                return persistent ? hotRemove.then(this.cold.deleteEntry(responseId)) : hotRemove;
             });
     }
 

@@ -29,10 +29,13 @@ public final class UserCommandListener extends DiscordListener<UserInteractionEv
 
     @Override
     @SuppressWarnings("all")
-    public Publisher<Void> apply(@NotNull UserInteractionEvent event) {
-        return Mono.just(event.getInteraction())
-            .flatMap(interaction -> Mono.justOrEmpty(interaction.getData().data().toOptional()))
-            .flatMapMany(commandData -> Flux.fromIterable(this.getDiscordBot().getCommandHandler().getCommandsById(event.getCommandId().asLong())))
+    public @NotNull Publisher<Void> apply(@NotNull UserInteractionEvent event) {
+        return Mono.justOrEmpty(event.getInteraction().getData().data().toOptional())
+            .flatMapMany(commandData -> Flux.fromIterable(
+                this.getDiscordBot()
+                    .getCommandHandler()
+                    .getCommandsById(event.getCommandId().asLong()))
+            )
             .single()
             .map(command -> (DiscordCommand<UserCommandContext>) command)
             .flatMap(command -> command.apply(

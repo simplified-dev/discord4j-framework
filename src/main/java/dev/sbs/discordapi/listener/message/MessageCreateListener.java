@@ -32,14 +32,13 @@ public class MessageCreateListener extends DiscordListener<MessageCreateEvent> {
         if (!event.getMessage().getUserData().bot().toOptional().orElse(false))
             return Mono.empty();
 
-        return this.getDiscordBot().getResponseLocator().findByMessage(event.getMessage().getId())
-            .flatMap(opt -> opt
-                .map(entry -> this.dispatchCreate(event, entry))
-                .orElse(Mono.empty())
-            );
+        return this.getDiscordBot()
+            .getResponseLocator()
+            .findByMessage(event.getMessage().getId())
+            .flatMap(entry -> this.dispatchCreate(event, entry));
     }
 
-    private Mono<Void> dispatchCreate(@NotNull MessageCreateEvent event, @NotNull CachedResponse entry) {
+    private @NotNull Mono<Void> dispatchCreate(@NotNull MessageCreateEvent event, @NotNull CachedResponse entry) {
         entry.setBusy();
         Optional<CachedResponse> followup = entry.isFollowup() ? Optional.of(entry) : Optional.empty();
         return entry.getResponse()

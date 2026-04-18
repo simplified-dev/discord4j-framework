@@ -6,7 +6,6 @@ import dev.sbs.discordapi.listener.DiscordListener;
 import discord4j.core.event.domain.message.MessageDeleteEvent;
 import org.jetbrains.annotations.NotNull;
 import org.reactivestreams.Publisher;
-import reactor.core.publisher.Mono;
 
 /**
  * Listener for message delete events, removing the corresponding
@@ -25,12 +24,11 @@ public class MessageDeleteListener extends DiscordListener<MessageDeleteEvent> {
     }
 
     @Override
-    public final Publisher<Void> apply(@NotNull MessageDeleteEvent event) {
-        return this.getDiscordBot().getResponseLocator().findByMessage(event.getMessageId())
-            .flatMap(opt -> opt
-                .map(entry -> this.getDiscordBot().getResponseLocator().remove(entry.getUniqueId()))
-                .orElse(Mono.empty())
-            );
+    public final @NotNull Publisher<Void> apply(@NotNull MessageDeleteEvent event) {
+        return this.getDiscordBot()
+            .getResponseLocator()
+            .findByMessage(event.getMessageId())
+            .flatMap(entry -> this.getDiscordBot().getResponseLocator().remove(entry.getUniqueId()));
     }
 
 }

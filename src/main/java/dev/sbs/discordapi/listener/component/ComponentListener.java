@@ -1,6 +1,7 @@
 package dev.sbs.discordapi.listener.component;
 
 import dev.sbs.discordapi.DiscordBot;
+import dev.sbs.discordapi.component.Component;
 import dev.sbs.discordapi.component.capability.EventInteractable;
 import dev.sbs.discordapi.component.capability.UserInteractable;
 import dev.sbs.discordapi.context.capability.ExceptionContext;
@@ -57,10 +58,8 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
             return Mono.empty();
 
         return this.getDiscordBot().getResponseLocator().findForInteraction(event)
-            .flatMap(opt -> opt
-                .map(entry -> this.handleEvent(event, entry))
-                .orElseGet(() -> event.deferEdit().then(Mono.empty()))
-            )
+            .flatMap(entry -> this.handleEvent(event, entry))
+            .switchIfEmpty(Mono.defer(event::deferEdit))
             .subscribeOn(Schedulers.boundedElastic());
     }
 
@@ -90,14 +89,14 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
      * find a matching {@link UserInteractable} by custom id and invokes its
      * inline interaction lambda.
      */
-    private Mono<Void> dispatchInline(@NotNull E event, @NotNull CachedResponse entry) {
+    private @NotNull Mono<Void> dispatchInline(@NotNull E event, @NotNull CachedResponse entry) {
         entry.setBusy();
         Optional<CachedResponse> followup = entry.isFollowup() ? Optional.of(entry) : Optional.empty();
         CachedResponse target = followup.orElse(entry);
 
         return Flux.fromIterable(target.getResponse().getCachedPageComponents())
             .concatWith(Flux.fromIterable(target.getResponse().getHistoryHandler().getCurrentPage().getComponents()))
-            .flatMap(tlmComponent -> Flux.fromStream(tlmComponent.flattenComponents()))
+            .concatMap(tlmComponent -> Flux.fromStream(tlmComponent.flattenComponents()))
             .filter(UserInteractable.class::isInstance)
             .filter(component -> event.getCustomId().equals(((UserInteractable) component).getIdentifier()))
             .filter(this.componentClass::isInstance)
@@ -116,7 +115,7 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
      * reply} call sees the registered owner class.
      */
     @SuppressWarnings("unchecked")
-    private Mono<Void> dispatchPersistent(@NotNull E event, @NotNull CachedResponse entry, @NotNull PersistentComponentHandler.ComponentRoute route) {
+    private @NotNull Mono<Void> dispatchPersistent(@NotNull E event, @NotNull CachedResponse entry, @NotNull PersistentComponentHandler.ComponentRoute route) {
         entry.setBusy();
         Optional<CachedResponse> followup = entry.isFollowup() ? Optional.of(entry) : Optional.empty();
         CachedResponse target = followup.orElse(entry);
@@ -139,7 +138,7 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
         Optional<T> matched = target.getResponse()
             .getCachedPageComponents()
             .stream()
-            .flatMap(tlmComponent -> tlmComponent.flattenComponents())
+            .flatMap(Component::flattenComponents)
             .filter(UserInteractable.class::isInstance)
             .filter(component -> event.getCustomId().equals(((UserInteractable) component).getIdentifier()))
             .filter(this.componentClass::isInstance)
@@ -216,7 +215,7 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
      * @param followup the matched followup, if the interaction targets one
      * @return a reactive pipeline completing when the interaction is handled
      */
-    protected final Mono<Void> handleInteraction(@NotNull E event, @NotNull CachedResponse entry, @NotNull T component, @NotNull Optional<CachedResponse> followup) {
+    protected final @NotNull Mono<Void> handleInteraction(@NotNull E event, @NotNull CachedResponse entry, @NotNull T component, @NotNull Optional<CachedResponse> followup) {
         C context = this.getContext(event, entry.getResponse(), component, followup);
 
         Mono<Void> deferEdit = Mono.defer(() -> entry.getState() == CachedResponse.State.DEFERRED ? Mono.empty() : context.deferEdit());

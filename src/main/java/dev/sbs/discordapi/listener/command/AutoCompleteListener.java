@@ -32,10 +32,12 @@ public final class AutoCompleteListener extends DiscordListener<ChatInputAutoCom
 
     @Override
     @SuppressWarnings("all")
-    public Publisher<Void> apply(@NotNull ChatInputAutoCompleteEvent event) {
-        return Mono.just(event.getInteraction())
-            .flatMap(interaction -> Mono.justOrEmpty(interaction.getData().data().toOptional()))
-            .flatMapMany(commandData -> Flux.fromIterable(this.getDiscordBot().getCommandHandler().getCommandsById(event.getCommandId().asLong()))
+    public @NotNull Publisher<Void> apply(@NotNull ChatInputAutoCompleteEvent event) {
+        return Mono.justOrEmpty(event.getInteraction().getData().data().toOptional())
+            .flatMapMany(commandData -> Flux.fromIterable(
+                this.getDiscordBot()
+                    .getCommandHandler()
+                    .getCommandsById(event.getCommandId().asLong()))
                 .filter(command -> this.matchesInteractionData(command, commandData))
             )
             .single()

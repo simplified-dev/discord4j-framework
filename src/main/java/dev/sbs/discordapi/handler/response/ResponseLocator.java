@@ -9,7 +9,6 @@ import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -46,9 +45,9 @@ public interface ResponseLocator {
      * should not trigger a cold-tier read or a persistent response rebuild.
      *
      * @param messageId the Discord message snowflake
-     * @return a mono emitting the matching entry, or empty
+     * @return a mono emitting the matching entry, or empty if none exists
      */
-    Mono<Optional<CachedResponse>> findByMessage(@NotNull Snowflake messageId);
+    Mono<CachedResponse> findByMessage(@NotNull Snowflake messageId);
 
     /**
      * Looks up a cached entry for an incoming component interaction,
@@ -58,17 +57,17 @@ public interface ResponseLocator {
      * builder method when needed.
      *
      * @param event the incoming component interaction event
-     * @return a mono emitting the matching (possibly hydrated) entry, or empty
+     * @return a mono emitting the matching (possibly hydrated) entry, or empty if none exists
      */
-    Mono<Optional<CachedResponse>> findForInteraction(@NotNull ComponentInteractionEvent event);
+    Mono<CachedResponse> findForInteraction(@NotNull ComponentInteractionEvent event);
 
     /**
      * Looks up a cached entry by its stable {@link Response#getUniqueId() response id}.
      *
      * @param responseId the stable response identifier
-     * @return a mono emitting the matching entry, or empty
+     * @return a mono emitting the matching entry, or empty if none exists
      */
-    Mono<Optional<CachedResponse>> findByResponseId(@NotNull UUID responseId);
+    Mono<CachedResponse> findByResponseId(@NotNull UUID responseId);
 
     /**
      * Looks up a followup entry by its parent's response id and the
@@ -76,9 +75,9 @@ public interface ResponseLocator {
      *
      * @param parentId the {@link Response#getUniqueId() uniqueId} of the parent entry
      * @param identifier the user-supplied followup identifier
-     * @return a mono emitting the matching followup entry, or empty
+     * @return a mono emitting the matching followup entry, or empty if none exists
      */
-    Mono<Optional<CachedResponse>> findFollowupByIdentifier(@NotNull UUID parentId, @NotNull String identifier);
+    Mono<CachedResponse> findFollowupByIdentifier(@NotNull UUID parentId, @NotNull String identifier);
 
     /**
      * Looks up a followup entry by its parent's response id and the followup's
@@ -86,9 +85,9 @@ public interface ResponseLocator {
      *
      * @param parentId the {@link Response#getUniqueId() uniqueId} of the parent entry
      * @param messageId the Discord message snowflake of the followup message
-     * @return a mono emitting the matching followup entry, or empty
+     * @return a mono emitting the matching followup entry, or empty if none exists
      */
-    Mono<Optional<CachedResponse>> findFollowupByMessage(@NotNull UUID parentId, @NotNull Snowflake messageId);
+    Mono<CachedResponse> findFollowupByMessage(@NotNull UUID parentId, @NotNull Snowflake messageId);
 
     /**
      * Stores a newly-sent message and its {@link Response}. Internally

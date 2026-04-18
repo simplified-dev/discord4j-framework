@@ -53,12 +53,9 @@ public interface ComponentContext extends MessageContext<ComponentInteractionEve
     default Mono<Void> discordDeleteFollowup(@NotNull String identifier) {
         return this.deferEdit().then(
             this.findFollowup(identifier)
-                .flatMap(opt -> opt
-                    .map(followup -> this.getEvent()
-                        .deleteFollowup(followup.getMessageId())
-                        .publishOn(followup.getResponse().getReactorScheduler())
-                    )
-                    .orElse(Mono.empty())
+                .flatMap(followup -> this.getEvent()
+                    .deleteFollowup(followup.getMessageId())
+                    .publishOn(followup.getResponse().getReactorScheduler())
                 )
         );
     }
@@ -75,10 +72,7 @@ public interface ComponentContext extends MessageContext<ComponentInteractionEve
     default Mono<Message> discordEditFollowup(@NotNull String identifier, @NotNull Response response) {
         return this.deferEdit(response.isEphemeral()).then(
             this.findFollowup(identifier)
-                .flatMap(opt -> opt
-                    .map(followup -> this.getEvent().editFollowup(followup.getMessageId(), response.getD4jInteractionReplyEditSpec()))
-                    .orElse(Mono.empty())
-                )
+                .flatMap(followup -> this.getEvent().editFollowup(followup.getMessageId(), response.getD4jInteractionReplyEditSpec()))
                 .publishOn(response.getReactorScheduler())
         );
     }

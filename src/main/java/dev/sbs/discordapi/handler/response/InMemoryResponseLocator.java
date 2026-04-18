@@ -38,24 +38,24 @@ public final class InMemoryResponseLocator implements ResponseLocator {
     private final @NotNull ConcurrentMap<Snowflake, UUID> messageIndex = Concurrent.newMap();
 
     @Override
-    public Mono<Optional<CachedResponse>> findByMessage(@NotNull Snowflake messageId) {
-        UUID uniqueId = this.messageIndex.get(messageId);
-        return Mono.just(Optional.ofNullable(uniqueId).map(this.entries::get));
+    public Mono<CachedResponse> findByMessage(@NotNull Snowflake messageId) {
+        return Mono.justOrEmpty(this.messageIndex.get(messageId))
+            .mapNotNull(this.entries::get);
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findForInteraction(@NotNull ComponentInteractionEvent event) {
+    public Mono<CachedResponse> findForInteraction(@NotNull ComponentInteractionEvent event) {
         return this.findByMessage(event.getMessageId());
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findByResponseId(@NotNull UUID responseId) {
-        return Mono.just(Optional.ofNullable(this.entries.get(responseId)));
+    public Mono<CachedResponse> findByResponseId(@NotNull UUID responseId) {
+        return Mono.justOrEmpty(this.entries.get(responseId));
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findFollowupByIdentifier(@NotNull UUID parentId, @NotNull String identifier) {
-        return Mono.just(this.entries.values()
+    public Mono<CachedResponse> findFollowupByIdentifier(@NotNull UUID parentId, @NotNull String identifier) {
+        return Mono.justOrEmpty(this.entries.values()
             .stream()
             .filter(entry -> entry.getParentId().filter(parentId::equals).isPresent())
             .filter(entry -> entry.getFollowupIdentifier().filter(identifier::equals).isPresent())
@@ -64,9 +64,9 @@ public final class InMemoryResponseLocator implements ResponseLocator {
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findFollowupByMessage(@NotNull UUID parentId, @NotNull Snowflake messageId) {
+    public Mono<CachedResponse> findFollowupByMessage(@NotNull UUID parentId, @NotNull Snowflake messageId) {
         return this.findByMessage(messageId)
-            .map(opt -> opt.filter(entry -> entry.getParentId().filter(parentId::equals).isPresent()));
+            .filter(entry -> entry.getParentId().filter(parentId::equals).isPresent());
     }
 
     @Override

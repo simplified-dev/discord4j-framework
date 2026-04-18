@@ -428,7 +428,8 @@ public final class DiscordExceptionHandler extends ExceptionHandler {
                             messageIdMono = this.getDiscordBot()
                                 .getResponseLocator()
                                 .findByResponseId(userErrorResponse.getUniqueId())
-                                .map(opt -> opt.map(CachedResponse::getMessageId));
+                                .map(entry -> Optional.of(entry.getMessageId()))
+                                .defaultIfEmpty(Optional.empty());
 
                         return messageIdMono.flatMap(messageId -> {
                             // Build Exception Response
@@ -449,10 +450,7 @@ public final class DiscordExceptionHandler extends ExceptionHandler {
                                     .map(id -> this.getDiscordBot()
                                         .getResponseLocator()
                                         .findByMessage(id)
-                                        .flatMap(entryOpt -> entryOpt
-                                            .map(entry -> this.getDiscordBot().getResponseLocator().remove(entry.getUniqueId()))
-                                            .orElse(Mono.empty())
-                                        )
+                                        .flatMap(entry -> this.getDiscordBot().getResponseLocator().remove(entry.getUniqueId()))
                                     )
                                     .orElse(Mono.empty())
                                 )

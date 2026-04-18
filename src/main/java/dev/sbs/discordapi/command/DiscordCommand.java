@@ -95,8 +95,7 @@ public abstract class DiscordCommand<C extends CommandContext<?>> extends Discor
      */
     @Override
     public final @NotNull Mono<Void> apply(@NotNull C context) {
-        return context.withEvent(event -> context.withChannel(messageChannel -> context
-            .deferReply(this.getStructure().ephemeral())
+        return context.deferReply(this.getStructure().ephemeral())
             .then(Mono.defer(() -> {
                 // Handle Developer Command
                 if (this.getStructure().developerOnly() && !this.isDeveloper(context.getInteractUserId()))
@@ -133,8 +132,7 @@ public abstract class DiscordCommand<C extends CommandContext<?>> extends Discor
                     context,
                     throwable
                 )
-            ))
-        ));
+            ));
     }
 
     /**

@@ -8,7 +8,6 @@ import dev.sbs.discordapi.listener.DiscordListener;
 import dev.sbs.discordapi.response.Emoji;
 import dev.sbs.discordapi.response.Response;
 import discord4j.core.event.domain.message.ReactionUserEmojiEvent;
-import discord4j.core.object.entity.Message;
 import discord4j.core.object.entity.User;
 import org.jetbrains.annotations.NotNull;
 import org.reactivestreams.Publisher;
@@ -41,25 +40,23 @@ public abstract class ReactionListener<E extends ReactionUserEmojiEvent> extends
 
     @Override
     public Publisher<Void> apply(@NotNull E event) {
-        if (!this.isBotMessage(event) || this.isBot(event))
-            return Mono.empty();
+        return event.getMessage()
+            .filter(message -> message.getAuthor().map(User::isBot).orElse(false))
+            .flatMap(ignored -> event.getUser())
+            .filter(user -> !user.isBot())
+            .flatMap(ignored -> this.getDiscordBot().getResponseLocator().findByMessage(event.getMessageId()))
+            .filter(entry -> entry.getUserId().equals(event.getUserId()))
+            .flatMap(entry -> {
+                final Emoji emoji = Emoji.of(event.getEmoji());
+                Optional<CachedResponse> followup = entry.isFollowup() ? Optional.of(entry) : Optional.empty();
 
-        return this.getDiscordBot().getResponseLocator().findByMessage(event.getMessageId())
-            .flatMap(opt -> opt
-                .filter(entry -> entry.getUserId().equals(event.getUserId()))
-                .map(entry -> {
-                    final Emoji emoji = Emoji.of(event.getEmoji());
-                    Optional<CachedResponse> followup = entry.isFollowup() ? Optional.of(entry) : Optional.empty();
-
-                    return Flux.fromIterable(entry.getResponse().getHistoryHandler().getCurrentPage().getReactions())
-                        .filter(reaction -> reaction.equals(emoji))
-                        .singleOrEmpty()
-                        .flatMap(reaction -> this.handleInteraction(event, entry, reaction, followup))
-                        .then(entry.updateLastInteract())
-                        .then();
-                })
-                .orElse(Mono.empty())
-            );
+                return Flux.fromIterable(entry.getResponse().getHistoryHandler().getCurrentPage().getReactions())
+                    .filter(reaction -> reaction.equals(emoji))
+                    .singleOrEmpty()
+                    .flatMap(reaction -> this.handleInteraction(event, entry, reaction, followup))
+                    .then(entry.updateLastInteract())
+                    .then();
+            });
     }
 
     /**
@@ -93,16 +90,6 @@ public abstract class ReactionListener<E extends ReactionUserEmojiEvent> extends
                 .filter(CachedResponse::isModified)
                 .flatMap(__ -> followup.isEmpty() ? context.edit() : context.editFollowup())
             );
-    }
-
-    /** Returns {@code true} if the reacting user is a bot. */
-    private boolean isBot(@NotNull E event) {
-        return event.getUser().blockOptional().map(User::isBot).orElse(true);
-    }
-
-    /** Returns {@code true} if the reacted-to message was authored by a bot. */
-    private boolean isBotMessage(@NotNull E event) {
-        return event.getMessage().blockOptional().flatMap(Message::getAuthor).map(User::isBot).orElse(false);
     }
 
 }

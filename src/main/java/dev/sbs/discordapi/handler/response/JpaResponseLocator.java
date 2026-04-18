@@ -165,31 +165,31 @@ public final class JpaResponseLocator implements ResponseLocator {
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findByMessage(@NotNull Snowflake messageId) {
+    public Mono<CachedResponse> findByMessage(@NotNull Snowflake messageId) {
         // The cold tier alone cannot reconstruct a CachedResponse without
         // the matching @PersistentResponse builder method - that orchestration
         // lives in CompositeResponseLocator.
-        return Mono.just(Optional.empty());
+        return Mono.empty();
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findForInteraction(@NotNull ComponentInteractionEvent event) {
+    public Mono<CachedResponse> findForInteraction(@NotNull ComponentInteractionEvent event) {
         return this.findByMessage(event.getMessageId());
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findByResponseId(@NotNull UUID responseId) {
-        return Mono.just(Optional.empty());
+    public Mono<CachedResponse> findByResponseId(@NotNull UUID responseId) {
+        return Mono.empty();
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findFollowupByIdentifier(@NotNull UUID parentId, @NotNull String identifier) {
-        return Mono.just(Optional.empty());
+    public Mono<CachedResponse> findFollowupByIdentifier(@NotNull UUID parentId, @NotNull String identifier) {
+        return Mono.empty();
     }
 
     @Override
-    public Mono<Optional<CachedResponse>> findFollowupByMessage(@NotNull UUID parentId, @NotNull Snowflake messageId) {
-        return Mono.just(Optional.empty());
+    public Mono<CachedResponse> findFollowupByMessage(@NotNull UUID parentId, @NotNull Snowflake messageId) {
+        return Mono.empty();
     }
 
     @Override
