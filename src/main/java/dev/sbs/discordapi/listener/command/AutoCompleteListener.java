@@ -8,6 +8,7 @@ import dev.sbs.discordapi.context.command.AutoCompleteContext;
 import dev.sbs.discordapi.context.command.SlashCommandContext;
 import dev.sbs.discordapi.listener.DiscordListener;
 import dev.simplified.collection.Concurrent;
+import dev.simplified.collection.ConcurrentList;
 import discord4j.core.event.domain.interaction.ChatInputAutoCompleteEvent;
 import discord4j.discordjson.json.ApplicationCommandOptionChoiceData;
 import org.jetbrains.annotations.NotNull;
@@ -42,31 +43,54 @@ public final class AutoCompleteListener extends DiscordListener<ChatInputAutoCom
             )
             .single()
             .map(command -> (DiscordCommand<SlashCommandContext>) command)
-            .flatMap(slashCommand -> event.respondWithSuggestions(
-                slashCommand.getParameters()
-                    .findFirst(Parameter::getName, event.getFocusedOption().getName())
-                    .map(parameter -> parameter.getAutoComplete()
-                        .apply(AutoCompleteContext.of(
-                            this.getDiscordBot(),
-                            event,
-                            slashCommand.getStructure(),
-                            new Argument(
-                                event.getInteraction(),
-                                parameter,
-                                event.getFocusedOption().getValue().orElseThrow()
-                            )
-                        ))
-                        .stream()
-                        .map(entry -> ApplicationCommandOptionChoiceData.builder()
-                            .name(entry.getKey())
-                            .value(entry.getValue())
-                            .build()
-                        )
-                        .map(ApplicationCommandOptionChoiceData.class::cast)
-                        .collect(Concurrent.toList())
-                    )
-                    .orElse(Concurrent.newList())
-            ));
+            .flatMap(slashCommand -> event.respondWithSuggestions(this.buildSuggestions(slashCommand, event)));
+    }
+
+    /**
+     * Resolves the focused parameter's autocomplete handler and materializes its
+     * entries into Discord's {@link ApplicationCommandOptionChoiceData} format,
+     * returning an empty list if the focused option does not map to a registered parameter.
+     *
+     * @param slashCommand the matched slash command
+     * @param event the incoming autocomplete event
+     * @return the list of suggestion choices to send back to Discord
+     */
+    private @NotNull ConcurrentList<ApplicationCommandOptionChoiceData> buildSuggestions(@NotNull DiscordCommand<SlashCommandContext> slashCommand, @NotNull ChatInputAutoCompleteEvent event) {
+        return slashCommand.getParameters()
+            .findFirst(Parameter::getName, event.getFocusedOption().getName())
+            .map(parameter -> parameter.getAutoComplete()
+                .apply(this.buildContext(slashCommand, parameter, event))
+                .stream()
+                .map(entry -> ApplicationCommandOptionChoiceData.builder()
+                    .name(entry.getKey())
+                    .value(entry.getValue())
+                    .build()
+                )
+                .map(ApplicationCommandOptionChoiceData.class::cast)
+                .collect(Concurrent.toList())
+            )
+            .orElse(Concurrent.newList());
+    }
+
+    /**
+     * Constructs the {@link AutoCompleteContext} for the focused parameter.
+     *
+     * @param slashCommand the matched slash command
+     * @param parameter the focused parameter whose autocomplete handler will run
+     * @param event the incoming autocomplete event
+     * @return the constructed autocomplete context
+     */
+    private @NotNull AutoCompleteContext buildContext(@NotNull DiscordCommand<SlashCommandContext> slashCommand, @NotNull Parameter parameter, @NotNull ChatInputAutoCompleteEvent event) {
+        return AutoCompleteContext.of(
+            this.getDiscordBot(),
+            event,
+            slashCommand.getStructure(),
+            new Argument(
+                event.getInteraction(),
+                parameter,
+                event.getFocusedOption().getValue().orElseThrow()
+            )
+        );
     }
 
 }

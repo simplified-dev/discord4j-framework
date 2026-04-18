@@ -38,14 +38,23 @@ public final class UserCommandListener extends DiscordListener<UserInteractionEv
             )
             .single()
             .map(command -> (DiscordCommand<UserCommandContext>) command)
-            .flatMap(command -> command.apply(
-                UserCommandContext.of(
-                    this.getDiscordBot(),
-                    event,
-                    command.getStructure()
-                )
-            ))
+            .flatMap(command -> command.apply(this.buildContext(command, event)))
             .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Constructs the {@link UserCommandContext} for the given command.
+     *
+     * @param command the matched command
+     * @param event the incoming interaction event
+     * @return the constructed user command context
+     */
+    private @NotNull UserCommandContext buildContext(@NotNull DiscordCommand<UserCommandContext> command, @NotNull UserInteractionEvent event) {
+        return UserCommandContext.of(
+            this.getDiscordBot(),
+            event,
+            command.getStructure()
+        );
     }
 
 }

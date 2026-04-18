@@ -46,20 +46,35 @@ public final class SlashCommandListener extends DiscordListener<ChatInputInterac
             )
             .single()
             .map(command -> (DiscordCommand<SlashCommandContext>) command)
-            .flatMap(command -> command.apply(SlashCommandContext.of(
-                this.getDiscordBot(),
-                event,
-                command.getStructure(),
-                this.getActualOptionData(command, event.getOptions())
-                    .stream()
-                    .flatMap(commandOption -> command.getParameters()
-                        .stream()
-                        .filter(parameter -> parameter.getName().equals(commandOption.getName()))
-                        .map(parameter -> new Argument(event.getInteraction(), parameter, commandOption.getValue().orElseThrow()))
-                    )
-                    .collect(Concurrent.toList())
-            )))
+            .flatMap(command -> command.apply(this.buildContext(command, event)))
             .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Constructs the {@link SlashCommandContext} for the given command, resolving
+     * the event's leaf-level options against the command's declared parameters
+     * to produce the argument list.
+     *
+     * @param command the matched command
+     * @param event the incoming interaction event
+     * @return the constructed slash command context
+     */
+    private @NotNull SlashCommandContext buildContext(@NotNull DiscordCommand<SlashCommandContext> command, @NotNull ChatInputInteractionEvent event) {
+        ConcurrentList<Argument> arguments = this.getActualOptionData(command, event.getOptions())
+            .stream()
+            .flatMap(commandOption -> command.getParameters()
+                .stream()
+                .filter(parameter -> parameter.getName().equals(commandOption.getName()))
+                .map(parameter -> new Argument(event.getInteraction(), parameter, commandOption.getValue().orElseThrow()))
+            )
+            .collect(Concurrent.toList());
+
+        return SlashCommandContext.of(
+            this.getDiscordBot(),
+            event,
+            command.getStructure(),
+            arguments
+        );
     }
 
     /**

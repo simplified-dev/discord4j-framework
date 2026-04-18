@@ -38,14 +38,23 @@ public final class MessageCommandListener extends DiscordListener<MessageInterac
             )
             .single()
             .map(command -> (DiscordCommand<MessageCommandContext>) command)
-            .flatMap(command -> command.apply(
-                MessageCommandContext.of(
-                    this.getDiscordBot(),
-                    event,
-                    command.getStructure()
-                )
-            ))
+            .flatMap(command -> command.apply(this.buildContext(command, event)))
             .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Constructs the {@link MessageCommandContext} for the given command.
+     *
+     * @param command the matched command
+     * @param event the incoming interaction event
+     * @return the constructed message command context
+     */
+    private @NotNull MessageCommandContext buildContext(@NotNull DiscordCommand<MessageCommandContext> command, @NotNull MessageInteractionEvent event) {
+        return MessageCommandContext.of(
+            this.getDiscordBot(),
+            event,
+            command.getStructure()
+        );
     }
 
 }
