@@ -6,11 +6,11 @@ import dev.simplified.reflection.builder.BuildFlag;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import org.jetbrains.annotations.NotNull;
+import reactor.core.publisher.Mono;
 
 import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
-import reactor.core.publisher.Mono;
 
 /**
  * An {@link EditableField} used by {@link EditorPage.Aggregate} to edit a live domain

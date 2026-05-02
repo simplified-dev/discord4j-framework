@@ -16,7 +16,6 @@ import dev.sbs.discordapi.context.component.ButtonContext;
 import dev.sbs.discordapi.context.component.ModalContext;
 import dev.sbs.discordapi.context.component.SelectMenuContext;
 import dev.sbs.discordapi.response.Emoji;
-import dev.sbs.discordapi.response.handler.ItemHandler;
 import dev.sbs.discordapi.response.page.Page;
 import dev.sbs.discordapi.util.DiscordReference;
 import dev.simplified.collection.Concurrent;

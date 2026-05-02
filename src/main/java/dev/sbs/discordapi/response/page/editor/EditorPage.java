@@ -37,7 +37,7 @@ import lombok.Getter;
 import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Mono;
 
-import java.awt.Color;
+import java.awt.*;
 import java.util.Optional;
 import java.util.function.Function;
 

@@ -5,8 +5,8 @@ import dev.sbs.discordapi.command.DiscordCommand;
 import dev.sbs.discordapi.command.Structure;
 import dev.sbs.discordapi.response.Emoji;
 import dev.simplified.collection.Concurrent;
+import dev.simplified.collection.ConcurrentLinkedMap;
 import dev.simplified.collection.ConcurrentList;
-import dev.simplified.collection.linked.ConcurrentLinkedMap;
 import dev.simplified.util.StringUtil;
 import discord4j.common.util.Snowflake;
 import discord4j.core.object.entity.Guild;
@@ -128,12 +128,12 @@ public abstract class DiscordReference {
                 return false;
 
             List<ApplicationCommandInteractionOptionData> options = commandData.options().get();
-            ApplicationCommandInteractionOptionData option = options.get(0);
+            ApplicationCommandInteractionOptionData option = options.getFirst();
 
             if (!compareName.equals(command.getStructure().parent().name()))
                 return false;
 
-            if (options.get(0).type() > 2)
+            if (options.getFirst().type() > 2)
                 return false;
 
             if (StringUtil.isNotEmpty(command.getStructure().group().name())) {
@@ -144,7 +144,7 @@ public abstract class DiscordReference {
                     return false;
 
                 options = option.options().get();
-                option = options.get(0);
+                option = options.getFirst();
             }
 
             compareName = option.name();
