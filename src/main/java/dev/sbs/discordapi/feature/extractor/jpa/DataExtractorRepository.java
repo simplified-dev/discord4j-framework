@@ -57,20 +57,20 @@ public class DataExtractorRepository {
     }
 
     /**
-     * Looks up an extractor by name visible to the caller. Tries owner-private first, then
-     * caller-guild, then public, returning the most specific match.
+     * Looks up an extractor by short id visible to the caller. Tries owner-private first,
+     * then caller-guild, then public, returning the most specific match.
      *
-     * @param name the extractor name
+     * @param shortId the extractor short id (the {@code /extract} lookup key)
      * @param callerUserId the calling user's snowflake
      * @param callerGuildId the calling user's guild snowflake, or {@code null} in DM
      * @return the most-specific accessible extractor, or empty when no match exists
      */
-    public @NotNull Optional<DataExtractor> findByName(@NotNull String name, long callerUserId, @Nullable Long callerGuildId) {
+    public @NotNull Optional<DataExtractor> findByShortId(@NotNull String shortId, long callerUserId, @Nullable Long callerGuildId) {
         return this.jpaSession.with((Function<Session, Optional<DataExtractor>>) session -> {
             CriteriaBuilder cb = session.getCriteriaBuilder();
             CriteriaQuery<DataExtractor> q = cb.createQuery(DataExtractor.class);
             Root<DataExtractor> root = q.from(DataExtractor.class);
-            q.select(root).where(cb.equal(root.get("name"), name));
+            q.select(root).where(cb.equal(root.get("shortId"), shortId));
             List<DataExtractor> rows = session.createQuery(q).getResultList();
             // Owner-private match wins; then guild; then public.
             DataExtractor owner = null, guild = null, pub = null;
@@ -117,7 +117,7 @@ public class DataExtractorRepository {
                 ));
             any.add(cb.equal(root.get("visibility"), DataExtractor.Visibility.PUBLIC));
 
-            q.select(root).where(cb.or(any.toArray(Predicate[]::new))).orderBy(cb.asc(root.get("name")));
+            q.select(root).where(cb.or(any.toArray(Predicate[]::new))).orderBy(cb.asc(root.get("label")));
             return session.createQuery(q).getResultList();
         });
     }

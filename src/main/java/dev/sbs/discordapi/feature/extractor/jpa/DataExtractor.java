@@ -42,7 +42,7 @@ import java.util.UUID;
     indexes = {
         @Index(name = "idx_data_extractor_owner_user_id", columnList = "owner_user_id"),
         @Index(name = "idx_data_extractor_visibility", columnList = "visibility"),
-        @Index(name = "idx_data_extractor_name_owner", columnList = "name, owner_user_id", unique = true)
+        @Index(name = "idx_data_extractor_short_id_owner", columnList = "short_id, owner_user_id", unique = true)
     }
 )
 public class DataExtractor implements JpaModel {
@@ -56,9 +56,20 @@ public class DataExtractor implements JpaModel {
     @Column(name = "owner_user_id", nullable = false)
     private long ownerUserId;
 
-    /** User-supplied short name. Unique per owner. */
-    @Column(name = "name", nullable = false, length = 64)
-    private @NotNull String name = "";
+    /**
+     * User-supplied short identifier used as the {@code /extract &lt;shortId&gt;} lookup key.
+     * Lowercase letters, digits, and underscores only; unique per owner. Defaults to a
+     * sluggified form of {@link #label} when the user does not pick one.
+     */
+    @Column(name = "short_id", nullable = false, length = 32)
+    private @NotNull String shortId = "";
+
+    /**
+     * Human-readable display label shown in the builder UI. Free-form; uniqueness is not
+     * enforced because lookups go through {@link #shortId}.
+     */
+    @Column(name = "label", nullable = false, length = 64)
+    private @NotNull String label = "";
 
     /**
      * {@link DataPipeline} definition serialised by {@link PipelineGson}. Stored as a

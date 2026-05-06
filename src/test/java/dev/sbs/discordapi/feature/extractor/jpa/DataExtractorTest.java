@@ -74,7 +74,8 @@ class DataExtractorTest {
         DataExtractor row = new DataExtractor();
         row.setId(UUID.randomUUID());
         row.setOwnerUserId(ownerId);
-        row.setName("test");
+        row.setShortId("test");
+        row.setLabel("Test");
         row.setVisibility(v);
         row.setGuildId(guildId);
         return row;
