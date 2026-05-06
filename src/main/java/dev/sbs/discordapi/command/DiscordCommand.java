@@ -20,7 +20,6 @@ import dev.sbs.discordapi.handler.locale.LocaleEntry;
 import dev.sbs.discordapi.util.DiscordReference;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentList;
-import dev.simplified.collection.unmodifiable.ConcurrentUnmodifiableList;
 import dev.simplified.reflection.Reflection;
 import discord4j.core.object.entity.channel.GuildChannel;
 import lombok.Getter;
@@ -53,7 +52,7 @@ public abstract class DiscordCommand<C extends CommandContext<?>> extends Discor
     /**
      * Reusable empty example list for commands that provide no usage examples.
      */
-    protected static final ConcurrentUnmodifiableList<String> NO_EXAMPLES = Concurrent.newUnmodifiableList();
+    protected static final ConcurrentList<String> NO_EXAMPLES = Concurrent.newUnmodifiableList();
 
     /**
      * The structural metadata annotation declared on this command class.
@@ -171,7 +170,7 @@ public abstract class DiscordCommand<C extends CommandContext<?>> extends Discor
      *
      * @return an unmodifiable list of parameters, empty by default
      */
-    public @NotNull ConcurrentUnmodifiableList<Parameter> getParameters() {
+    public @NotNull ConcurrentList<Parameter> getParameters() {
         return Concurrent.newUnmodifiableList();
     }
 

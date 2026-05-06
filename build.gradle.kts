@@ -42,6 +42,7 @@ dependencies {
     api("com.github.simplified-dev:yaml:master-SNAPSHOT")
     api("com.github.simplified-dev:client:master-SNAPSHOT")
     api("com.github.simplified-dev:persistence:master-SNAPSHOT")
+    api("com.github.simplified-dev:dataflow:master-SNAPSHOT")
 
     implementation(libs.sentry)
 }

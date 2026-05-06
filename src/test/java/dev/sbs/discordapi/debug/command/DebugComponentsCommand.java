@@ -19,8 +19,8 @@ import dev.sbs.discordapi.response.embed.Embed;
 import dev.sbs.discordapi.response.embed.Footer;
 import dev.sbs.discordapi.response.page.Page;
 import dev.simplified.collection.Concurrent;
+import dev.simplified.collection.ConcurrentList;
 import dev.simplified.collection.tuple.pair.Pair;
-import dev.simplified.collection.unmodifiable.ConcurrentUnmodifiableList;
 import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Mono;
 
@@ -44,7 +44,7 @@ public class DebugComponentsCommand extends DiscordCommand<SlashCommandContext> 
     }
 
     @Override
-    public @NotNull ConcurrentUnmodifiableList<Parameter> getParameters() {
+    public @NotNull ConcurrentList<Parameter> getParameters() {
         return Concurrent.newUnmodifiableList(
             Parameter.builder()
                 .withName("test1")
