@@ -2,11 +2,12 @@ package dev.sbs.discordapi.handler;
 
 import dev.sbs.discordapi.command.DiscordCommand;
 import dev.sbs.discordapi.event.BotEvent;
+import dev.sbs.discordapi.feature.extractor.ExtractorStore;
+import dev.sbs.discordapi.feature.extractor.InMemoryExtractorStore;
 import dev.sbs.discordapi.listener.BotEventListener;
 import dev.sbs.discordapi.listener.DiscordListener;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentSet;
-import dev.simplified.persistence.JpaConfig;
 import dev.simplified.reflection.Reflection;
 import dev.simplified.reflection.builder.BuildFlag;
 import dev.simplified.reflection.info.ResourceInfo;
@@ -22,7 +23,6 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.Optional;
 import java.util.function.Function;
@@ -38,7 +38,6 @@ public final class DiscordConfig {
     private final @NotNull Optional<Long> logChannelId;
     @Flag(secure = true)
     private final @NotNull Optional<String> sentryDsn;
-    private final @NotNull Optional<JpaConfig> jpaConfig;
     private final ConcurrentSet<Class<? extends DiscordListener>> listeners;
     private final ConcurrentSet<Class<? extends BotEventListener>> botEventListeners;
     private final ConcurrentSet<Class<DiscordCommand>> commands;
@@ -49,6 +48,7 @@ public final class DiscordConfig {
     private final @NotNull Function<ShardInfo, ClientPresence> clientPresence;
     private final @NotNull MemberRequestFilter memberRequestFilter;
     private final @NotNull Logging.Level logLevel;
+    private final @NotNull ExtractorStore extractorStore;
 
     public static @NotNull Builder builder() {
         return new Builder();
@@ -68,7 +68,6 @@ public final class DiscordConfig {
         private Optional<Long> logChannelId = Optional.empty();
         @Flag(secure = true)
         private Optional<String> sentryDsn = Optional.empty();
-        private Optional<JpaConfig> jpaConfig = Optional.empty();
 
         // Collections
         private ConcurrentSet<Class<? extends DiscordListener>> listeners = Concurrent.newSet();
@@ -85,6 +84,8 @@ public final class DiscordConfig {
         private MemberRequestFilter memberRequestFilter = MemberRequestFilter.all();
         @BuildFlag(nonNull = true)
         private Logging.Level logLevel = Logging.Level.WARN;
+        @BuildFlag(nonNull = true)
+        private ExtractorStore extractorStore = InMemoryExtractorStore.of();
 
         public Builder withAllowedMentions(@NotNull AllowedMentions allowedMentions) {
             this.allowedMentions = allowedMentions;
@@ -144,15 +145,6 @@ public final class DiscordConfig {
 
         public Builder withSentryDsn(@NotNull Optional<String> sentryDsn) {
             this.sentryDsn = sentryDsn;
-            return this;
-        }
-
-        public Builder withJpaConfig(@Nullable JpaConfig jpaConfig) {
-            return this.withJpaConfig(Optional.ofNullable(jpaConfig));
-        }
-
-        public Builder withJpaConfig(@NotNull Optional<JpaConfig> jpaConfig) {
-            this.jpaConfig = jpaConfig;
             return this;
         }
 
@@ -228,6 +220,19 @@ public final class DiscordConfig {
             return this;
         }
 
+        /**
+         * Sets the {@link ExtractorStore} backing the {@code /extractor} and {@code /extract}
+         * slash commands. Defaults to {@link InMemoryExtractorStore} - bots that want
+         * persistent extractors should plug a database-backed implementation.
+         *
+         * @param extractorStore the store implementation
+         * @return this builder
+         */
+        public Builder withExtractorStore(@NotNull ExtractorStore extractorStore) {
+            this.extractorStore = extractorStore;
+            return this;
+        }
+
         public @NotNull DiscordConfig build() {
             Reflection.validateFlags(this);
 
@@ -236,7 +241,6 @@ public final class DiscordConfig {
                 this.mainGuildId.orElseThrow(),
                 this.logChannelId,
                 this.sentryDsn,
-                this.jpaConfig,
                 this.listeners.toUnmodifiable(),
                 this.botEventListeners.toUnmodifiable(),
                 this.commands.toUnmodifiable(),
@@ -245,7 +249,8 @@ public final class DiscordConfig {
                 this.intents,
                 this.clientPresence,
                 this.memberRequestFilter,
-                this.logLevel
+                this.logLevel,
+                this.extractorStore
             );
         }
 

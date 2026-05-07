@@ -73,6 +73,28 @@ public interface CheckboxGroupContext extends ActionComponentContext {
     }
 
     /**
+     * Creates a new eternal {@code CheckboxGroupContext} for an
+     * annotation-dispatched interaction whose backing message has no cache
+     * entry. The {@link #getResponseId() responseId} is a deterministic UUID
+     * derived from the message snowflake.
+     *
+     * @param discordBot the bot instance
+     * @param event the component interaction event
+     * @param checkboxGroup the synthesized checkbox group stub carrying the {@code customId} and selected values
+     * @param eternalResponseId the deterministic eternal response id
+     * @return a new eternal checkbox group context
+     */
+    static @NotNull CheckboxGroupContext ofEternal(@NotNull DiscordBot discordBot, @NotNull ComponentInteractionEvent event, @NotNull CheckboxGroup checkboxGroup, @NotNull UUID eternalResponseId) {
+        return new Impl(
+            discordBot,
+            event,
+            eternalResponseId,
+            checkboxGroup,
+            Optional.empty()
+        );
+    }
+
+    /**
      * Default implementation of {@link CheckboxGroupContext}.
      */
     @Getter

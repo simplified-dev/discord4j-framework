@@ -15,7 +15,6 @@ import dev.sbs.discordapi.context.command.SlashCommandContext;
 import dev.sbs.discordapi.context.command.UserCommandContext;
 import dev.sbs.discordapi.context.scope.CommandContext;
 import dev.sbs.discordapi.exception.DiscordException;
-import dev.sbs.discordapi.handler.DispatchingClassContextKey;
 import dev.sbs.discordapi.handler.locale.LocaleEntry;
 import dev.sbs.discordapi.util.DiscordReference;
 import dev.simplified.collection.Concurrent;
@@ -121,8 +120,7 @@ public abstract class DiscordCommand<C extends CommandContext<?>> extends Discor
 
                 // Process Command
                 this.processing = true;
-                return this.process(context)
-                    .contextWrite(reactorCtx -> reactorCtx.put(DispatchingClassContextKey.KEY, this.getClass()));
+                return this.process(context);
             }))
             .thenEmpty(Mono.fromRunnable(() -> this.processing = false))
             .onErrorResume(throwable -> this.getDiscordBot().getExceptionHandler().handleException(

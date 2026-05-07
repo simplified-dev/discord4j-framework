@@ -7,6 +7,7 @@ import dev.sbs.discordapi.component.layout.Section;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Renders one {@link Stage} as a {@link Section}: a {@link TextDisplay} body showing the
@@ -17,25 +18,38 @@ import org.jetbrains.annotations.NotNull;
 public final class StageSection {
 
     /**
-     * Builds a section for the given stage.
+     * Builds a section for the given stage with a no-op edit button (read-only render).
      *
      * @param index zero-based stage index used to wire the edit button identifier
      * @param stage the stage to render
      * @return the section
      */
     public static @NotNull Section of(int index, @NotNull Stage<?, ?> stage) {
-        Button accessory = Button.builder()
+        return of(index, stage, null);
+    }
+
+    /**
+     * Builds a section for the given stage, attaching {@code onEdit} as the accessory's
+     * click handler when non-null.
+     *
+     * @param index zero-based stage index used to wire the edit button identifier
+     * @param stage the stage to render
+     * @param onEdit the edit-button click handler, or {@code null} for a no-op button
+     * @return the section
+     */
+    public static @NotNull Section of(int index, @NotNull Stage<?, ?> stage, @Nullable PipelineBuilderPage.IndexedHandler onEdit) {
+        Button.Builder accessory = Button.builder()
             .withStyle(Button.Style.SECONDARY)
             .withLabel("Edit")
-            .withIdentifier(PipelineBuilderPage.ID_EDIT_STAGE_PREFIX + index)
-            .build();
+            .withIdentifier(PipelineBuilderPage.ID_EDIT_STAGE_PREFIX + index);
+        if (onEdit != null) accessory.onInteract(ctx -> onEdit.handle(index, ctx));
 
         String body = "**" + icon(stage) + " " + categoryName(stage) + " #" + index + "** - "
             + stage.summary() + "\n"
             + "`" + stage.inputType().label() + " -> " + stage.outputType().label() + "`";
 
         return Section.builder()
-            .withAccessory(accessory)
+            .withAccessory(accessory.build())
             .withComponents(TextDisplay.of(body))
             .build();
     }

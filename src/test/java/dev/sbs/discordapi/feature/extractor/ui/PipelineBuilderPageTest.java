@@ -35,14 +35,14 @@ class PipelineBuilderPageTest {
     void populatedPipeline() {
         DataPipeline pipeline = DataPipeline.builder()
             .source(PasteSource.html("<table class='infobox'><tr><td>Dmg</td><td>500</td></tr></table>"))
-            .stage(ParseHtmlTransform.create())
+            .stage(ParseHtmlTransform.of())
             .stage(CssSelectTransform.of("table.infobox tr"))
             .stage(DomTextContainsFilter.of("Dmg"))
             .stage(FirstCollect.of(DataTypes.DOM_NODE))
             .stage(NthChildTransform.of("td", 1))
-            .stage(NodeTextTransform.create())
+            .stage(NodeTextTransform.of())
             .stage(RegexExtractTransform.of("\\d+"))
-            .stage(ParseIntTransform.create())
+            .stage(ParseIntTransform.of())
             .build();
 
         PipelineBuilderState state = PipelineBuilderState.builder()

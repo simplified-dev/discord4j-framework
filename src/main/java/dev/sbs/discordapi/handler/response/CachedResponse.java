@@ -19,33 +19,25 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Hot-tier cache entry pairing a {@link Response} with the Discord identifiers
- * of the message backing it. A single {@code CachedResponse} type represents
- * both top-level replies and followup messages: followups are independent
- * entries whose {@link #getParentId() parentId} points at their parent's
+ * Cache entry pairing a {@link Response} with the Discord identifiers of the
+ * message backing it. A single {@code CachedResponse} type represents both
+ * top-level replies and followup messages: followups are independent entries
+ * whose {@link #getParentId() parentId} points at their parent's
  * {@link #getUniqueId() uniqueId}, allowing the locator to apply uniform
  * expiry, lookup, and cascade-delete logic across both kinds.
  *
  * <p>
- * Lifecycle is tracked through a single {@link State} enum that replaces
- * the previous {@code busy}/{@code deferred} two-flag scheme, eliminating
+ * Lifecycle is tracked through a single {@link State} enum that replaces the
+ * previous {@code busy}/{@code deferred} two-flag scheme, eliminating
  * impossible combinations and improving readability at call sites.
  *
  * <p>
  * The {@link Response} is the single source of truth for content - dirty
- * checking flows through {@link Response#isCacheUpdateRequired()} rather
- * than an equality-based snapshot.
- *
- * <p>
- * Persistence metadata ({@link #getOwnerClass() ownerClass} and
- * {@link #getBuilderId() builderId}) is populated for entries written to the
- * JPA cold tier and used by the hydration flow to locate the matching
- * {@link dev.sbs.discordapi.response.PersistentResponse @PersistentResponse}
- * builder method when the in-memory cache is missed after a restart.
+ * checking flows through {@link Response#isCacheUpdateRequired()} rather than
+ * an equality-based snapshot.
  *
  * @see ResponseLocator
  * @see NavState
- * @see dev.sbs.discordapi.handler.response.jpa.PersistentResponseEntity
  */
 public final class CachedResponse {
 
@@ -71,8 +63,6 @@ public final class CachedResponse {
     private final @NotNull Optional<UUID> parentId;
     private final @NotNull Optional<String> followupIdentifier;
     private final @NotNull ConcurrentMap<Snowflake, Modal> activeModals = Concurrent.newMap();
-    private final @NotNull Optional<Class<?>> ownerClass;
-    private final @NotNull Optional<String> builderId;
     private final @NotNull Instant createdAt;
     private final @NotNull Optional<Instant> expiresAt;
 
@@ -89,8 +79,6 @@ public final class CachedResponse {
         this.guildId = builder.guildId;
         this.parentId = builder.parentId;
         this.followupIdentifier = builder.followupIdentifier;
-        this.ownerClass = builder.ownerClass;
-        this.builderId = builder.builderId;
         this.createdAt = builder.createdAt;
         this.expiresAt = builder.expiresAt;
         this.response = builder.response;
@@ -162,16 +150,6 @@ public final class CachedResponse {
         return this.navState;
     }
 
-    /** The fully-qualified host class for the persistent builder, or empty for transient entries. */
-    public @NotNull Optional<Class<?>> getOwnerClass() {
-        return this.ownerClass;
-    }
-
-    /** Builder discriminator id for the persistent host class, or empty for transient entries. */
-    public @NotNull Optional<String> getBuilderId() {
-        return this.builderId;
-    }
-
     /** Timestamp at which this entry was created. */
     public @NotNull Instant getCreatedAt() {
         return this.createdAt;
@@ -179,8 +157,7 @@ public final class CachedResponse {
 
     /**
      * Optional expiration instant for this entry. Empty indicates the entry
-     * never expires (typical for persistent rows whose builder explicitly
-     * leaves time-to-live unset).
+     * never expires.
      */
     public @NotNull Optional<Instant> getExpiresAt() {
         return this.expiresAt;
@@ -194,11 +171,6 @@ public final class CachedResponse {
     /** {@code true} if this entry represents a followup of another entry. */
     public boolean isFollowup() {
         return this.parentId.isPresent();
-    }
-
-    /** {@code true} if this entry has persistence metadata and should be written to the cold tier. */
-    public boolean isPersistent() {
-        return this.ownerClass.isPresent();
     }
 
     /**
@@ -333,8 +305,7 @@ public final class CachedResponse {
 
     /**
      * Mutable builder for assembling a {@link CachedResponse}. Used by the
-     * locator implementations when promoting a sent message into the hot tier
-     * and when hydrating a persistent row from the cold tier.
+     * locator implementation when promoting a sent message into the cache.
      */
     public static final class Builder {
 
@@ -345,8 +316,6 @@ public final class CachedResponse {
         private Optional<Snowflake> guildId = Optional.empty();
         private Optional<UUID> parentId = Optional.empty();
         private Optional<String> followupIdentifier = Optional.empty();
-        private Optional<Class<?>> ownerClass = Optional.empty();
-        private Optional<String> builderId = Optional.empty();
         private Instant createdAt = Instant.now();
         private Optional<Instant> expiresAt = Optional.empty();
         private Response response;
@@ -401,30 +370,6 @@ public final class CachedResponse {
         /** Sets the optional user-supplied followup identifier. */
         public @NotNull Builder withFollowupIdentifier(@NotNull Optional<String> identifier) {
             this.followupIdentifier = identifier;
-            return this;
-        }
-
-        /** Sets the persistent host class hosting the {@code @PersistentResponse} builder method. */
-        public @NotNull Builder withOwnerClass(@NotNull Class<?> ownerClass) {
-            this.ownerClass = Optional.of(ownerClass);
-            return this;
-        }
-
-        /** Sets the persistent host class via {@link Optional}. */
-        public @NotNull Builder withOwnerClass(@NotNull Optional<Class<?>> ownerClass) {
-            this.ownerClass = ownerClass;
-            return this;
-        }
-
-        /** Sets the {@code @PersistentResponse} builder discriminator id. */
-        public @NotNull Builder withBuilderId(@NotNull String builderId) {
-            this.builderId = Optional.of(builderId);
-            return this;
-        }
-
-        /** Sets the {@code @PersistentResponse} builder discriminator id via {@link Optional}. */
-        public @NotNull Builder withBuilderId(@NotNull Optional<String> builderId) {
-            this.builderId = builderId;
             return this;
         }
 

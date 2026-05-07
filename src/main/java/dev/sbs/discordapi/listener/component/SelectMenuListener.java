@@ -36,4 +36,19 @@ public final class SelectMenuListener extends ComponentListener<SelectMenuIntera
         );
     }
 
+    @Override
+    protected @NotNull SelectMenuContext getEternalContext(@NotNull SelectMenuInteractionEvent event) {
+        SelectMenu synthetic = SelectMenu.StringMenu.builder()
+            .withIdentifier(event.getCustomId())
+            .build()
+            .updateSelected(event.getValues());
+
+        return SelectMenuContext.ofEternal(
+            this.getDiscordBot(),
+            event,
+            synthetic,
+            computeEternalResponseId(event)
+        );
+    }
+
 }

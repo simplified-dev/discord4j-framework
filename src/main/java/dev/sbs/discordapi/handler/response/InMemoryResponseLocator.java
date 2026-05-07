@@ -1,12 +1,11 @@
 package dev.sbs.discordapi.handler.response;
 
 import dev.sbs.discordapi.context.EventContext;
-import dev.sbs.discordapi.handler.DispatchingClassContextKey;
+import dev.sbs.discordapi.handler.ComponentRouteTtlContextKey;
 import dev.sbs.discordapi.response.Response;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentMap;
 import discord4j.common.util.Snowflake;
-import discord4j.core.event.domain.interaction.ComponentInteractionEvent;
 import discord4j.core.object.entity.Message;
 import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Flux;
@@ -18,19 +17,16 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Hot-tier {@link ResponseLocator} backed by two in-memory maps: a primary
+ * In-memory {@link ResponseLocator} backed by two maps: a primary
  * {@code uniqueId -> CachedResponse} map and a {@code messageId -> uniqueId}
- * secondary index. Both lookups are O(1) and replace the legacy linear-scan
- * list that previously walked every entry on every component interaction.
+ * secondary index. Both lookups are O(1).
  *
  * <p>
- * This locator does not perform persistent hydration on its own - on a miss
- * it simply returns empty. The {@link CompositeResponseLocator} layers a
- * cold-tier on top to provide cross-restart durability for entries whose
- * bound {@link Response#isPersistent()} is true.
- *
- * @see CompositeResponseLocator
- * @see JpaResponseLocator
+ * The {@link #store} method honors a per-route cache time-to-live override
+ * carried on the Reactor {@link reactor.util.context.Context Context} under
+ * {@link ComponentRouteTtlContextKey#KEY}. When present, the override replaces
+ * the expiry derived from {@link Response#getTimeToLive() Response.timeToLive};
+ * otherwise the response's own value is used.
  */
 public final class InMemoryResponseLocator implements ResponseLocator {
 
@@ -38,23 +34,18 @@ public final class InMemoryResponseLocator implements ResponseLocator {
     private final @NotNull ConcurrentMap<Snowflake, UUID> messageIndex = Concurrent.newMap();
 
     @Override
-    public Mono<CachedResponse> findByMessage(@NotNull Snowflake messageId) {
+    public @NotNull Mono<CachedResponse> findByMessage(@NotNull Snowflake messageId) {
         return Mono.justOrEmpty(this.messageIndex.get(messageId))
             .mapNotNull(this.entries::get);
     }
 
     @Override
-    public Mono<CachedResponse> findForInteraction(@NotNull ComponentInteractionEvent event) {
-        return this.findByMessage(event.getMessageId());
-    }
-
-    @Override
-    public Mono<CachedResponse> findByResponseId(@NotNull UUID responseId) {
+    public @NotNull Mono<CachedResponse> findByResponseId(@NotNull UUID responseId) {
         return Mono.justOrEmpty(this.entries.get(responseId));
     }
 
     @Override
-    public Mono<CachedResponse> findFollowupByIdentifier(@NotNull UUID parentId, @NotNull String identifier) {
+    public @NotNull Mono<CachedResponse> findFollowupByIdentifier(@NotNull UUID parentId, @NotNull String identifier) {
         return Mono.justOrEmpty(this.entries.values()
             .stream()
             .filter(entry -> entry.getParentId().filter(parentId::equals).isPresent())
@@ -64,14 +55,16 @@ public final class InMemoryResponseLocator implements ResponseLocator {
     }
 
     @Override
-    public Mono<CachedResponse> findFollowupByMessage(@NotNull UUID parentId, @NotNull Snowflake messageId) {
+    public @NotNull Mono<CachedResponse> findFollowupByMessage(@NotNull UUID parentId, @NotNull Snowflake messageId) {
         return this.findByMessage(messageId)
             .filter(entry -> entry.getParentId().filter(parentId::equals).isPresent());
     }
 
     @Override
-    public Mono<CachedResponse> store(@NotNull Message message, @NotNull EventContext<?> creatorContext, @NotNull Response response) {
+    public @NotNull Mono<CachedResponse> store(@NotNull Message message, @NotNull EventContext<?> creatorContext, @NotNull Response response) {
         return Mono.deferContextual(reactorCtx -> {
+            Optional<Duration> ttlOverride = reactorCtx.<Duration>getOrEmpty(ComponentRouteTtlContextKey.KEY);
+
             CachedResponse.Builder builder = CachedResponse.builder()
                 .withUniqueId(response.getUniqueId())
                 .withMessageId(message.getId())
@@ -80,51 +73,41 @@ public final class InMemoryResponseLocator implements ResponseLocator {
                 .withGuildId(creatorContext.getGuildId())
                 .withResponse(response)
                 .withCreatedAt(Instant.now())
-                .withExpiresAt(this.computeExpiresAt(response));
-
-            if (response.isPersistent()) {
-                Class<?> ownerClass = reactorCtx.<Class<?>>getOrEmpty(DispatchingClassContextKey.KEY)
-                    .orElseThrow(() -> new IllegalStateException(
-                        "Persistent Response sent outside a dispatched command or @Component handler"
-                    ));
-                builder.withOwnerClass(ownerClass);
-                builder.withBuilderId(response.getPersistentBuilderId().orElse(""));
-            }
+                .withExpiresAt(this.computeExpiresAt(response, ttlOverride));
 
             return Mono.just(this.put(builder.build()));
         });
     }
 
     @Override
-    public Mono<CachedResponse> storeFollowup(
+    public @NotNull Mono<CachedResponse> storeFollowup(
         @NotNull CachedResponse parent,
         @NotNull String identifier,
         @NotNull Message message,
         @NotNull EventContext<?> creatorContext,
         @NotNull Response response
     ) {
-        CachedResponse.Builder builder = CachedResponse.builder()
-            .withUniqueId(response.getUniqueId())
-            .withMessageId(message.getId())
-            .withChannelId(message.getChannelId())
-            .withUserId(creatorContext.getInteractUserId())
-            .withGuildId(creatorContext.getGuildId())
-            .withParentId(parent.getUniqueId())
-            .withFollowupIdentifier(identifier)
-            .withResponse(response)
-            .withCreatedAt(Instant.now())
-            .withExpiresAt(this.computeExpiresAt(response));
+        return Mono.deferContextual(reactorCtx -> {
+            Optional<Duration> ttlOverride = reactorCtx.<Duration>getOrEmpty(ComponentRouteTtlContextKey.KEY);
 
-        // Followups inherit the parent's persistence metadata so the cold tier
-        // can be cascade-deleted when the parent expires.
-        parent.getOwnerClass().ifPresent(builder::withOwnerClass);
-        parent.getBuilderId().ifPresent(builder::withBuilderId);
+            CachedResponse.Builder builder = CachedResponse.builder()
+                .withUniqueId(response.getUniqueId())
+                .withMessageId(message.getId())
+                .withChannelId(message.getChannelId())
+                .withUserId(creatorContext.getInteractUserId())
+                .withGuildId(creatorContext.getGuildId())
+                .withParentId(parent.getUniqueId())
+                .withFollowupIdentifier(identifier)
+                .withResponse(response)
+                .withCreatedAt(Instant.now())
+                .withExpiresAt(this.computeExpiresAt(response, ttlOverride));
 
-        return Mono.just(this.put(builder.build()));
+            return Mono.just(this.put(builder.build()));
+        });
     }
 
     @Override
-    public Mono<Void> remove(@NotNull UUID responseId) {
+    public @NotNull Mono<Void> remove(@NotNull UUID responseId) {
         return Mono.fromRunnable(() -> {
             CachedResponse removed = this.entries.remove(responseId);
             if (removed != null)
@@ -143,23 +126,19 @@ public final class InMemoryResponseLocator implements ResponseLocator {
     }
 
     @Override
-    public Mono<Void> update(@NotNull CachedResponse entry) {
-        // Hot tier holds entries by reference; mutations on the entry object
-        // are immediately visible. Nothing to do here.
+    public @NotNull Mono<Void> update(@NotNull CachedResponse entry) {
+        // Entries are held by reference; mutations on the entry object are
+        // immediately visible. Nothing to do here.
         return Mono.empty();
     }
 
     @Override
-    public Flux<CachedResponse> findExpired() {
+    public @NotNull Flux<CachedResponse> findExpired() {
         return Flux.fromIterable(this.entries.values())
             .filter(CachedResponse::notActive);
     }
 
-    /**
-     * Records the given entry in both maps and returns it. Public so the
-     * composite locator can hand off freshly hydrated entries from the
-     * cold tier without re-running persistence branching logic.
-     */
+    /** Records the given entry in both maps and returns it. */
     @NotNull CachedResponse put(@NotNull CachedResponse entry) {
         this.entries.put(entry.getUniqueId(), entry);
         this.messageIndex.put(entry.getMessageId(), entry.getUniqueId());
@@ -168,10 +147,18 @@ public final class InMemoryResponseLocator implements ResponseLocator {
 
     /**
      * Computes the optional expiration instant from the response's
-     * time-to-live. Persistent responses with a builder-explicit
-     * time-to-live still expire; non-positive values indicate no expiry.
+     * time-to-live, applying the optional per-route override when present.
+     * Non-positive values indicate no expiry.
      */
-    private @NotNull Optional<Instant> computeExpiresAt(@NotNull Response response) {
+    private @NotNull Optional<Instant> computeExpiresAt(@NotNull Response response, @NotNull Optional<Duration> ttlOverride) {
+        if (ttlOverride.isPresent()) {
+            Duration override = ttlOverride.get();
+            if (override.isZero() || override.isNegative())
+                return Optional.empty();
+
+            return Optional.of(Instant.now().plus(override));
+        }
+
         int ttl = response.getTimeToLive();
         if (ttl <= 0)
             return Optional.empty();

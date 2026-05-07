@@ -1,4 +1,4 @@
-package dev.sbs.discordapi.feature.extractor.jpa;
+package dev.sbs.discordapi.feature.extractor;
 
 import dev.sbs.dataflow.DataPipeline;
 import dev.sbs.dataflow.PipelineContext;
@@ -14,13 +14,12 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 
-/** Unit tests for {@link DataExtractor}. Repository tests live alongside JPA integration. */
-class DataExtractorTest {
+class ExtractorTest {
 
     @Test
     @DisplayName("PRIVATE visibility lets only the owner use the extractor")
     void privateVisibility() {
-        DataExtractor row = newExtractor(100L, DataExtractor.Visibility.PRIVATE, null);
+        Extractor row = newExtractor(100L, Extractor.Visibility.PRIVATE, null);
         assertThat(row.canBeUsedBy(100L, null), is(true));
         assertThat(row.canBeUsedBy(100L, 999L), is(true));
         assertThat(row.canBeUsedBy(200L, null), is(false));
@@ -30,7 +29,7 @@ class DataExtractorTest {
     @Test
     @DisplayName("GUILD visibility lets anyone in the saver's guild use the extractor")
     void guildVisibility() {
-        DataExtractor row = newExtractor(100L, DataExtractor.Visibility.GUILD, 999L);
+        Extractor row = newExtractor(100L, Extractor.Visibility.GUILD, 999L);
         assertThat(row.canBeUsedBy(100L, 999L), is(true));
         assertThat(row.canBeUsedBy(200L, 999L), is(true));
         assertThat(row.canBeUsedBy(200L, 888L), is(false));
@@ -40,7 +39,7 @@ class DataExtractorTest {
     @Test
     @DisplayName("PUBLIC visibility lets anyone use the extractor")
     void publicVisibility() {
-        DataExtractor row = newExtractor(100L, DataExtractor.Visibility.PUBLIC, null);
+        Extractor row = newExtractor(100L, Extractor.Visibility.PUBLIC, null);
         assertThat(row.canBeUsedBy(100L, 999L), is(true));
         assertThat(row.canBeUsedBy(200L, null), is(true));
         assertThat(row.canBeUsedBy(300L, 888L), is(true));
@@ -51,11 +50,11 @@ class DataExtractorTest {
     void pipelineRoundTrip() {
         DataPipeline original = DataPipeline.builder()
             .source(PasteSource.json("42"))
-            .stage(ParseJsonTransform.create())
-            .stage(JsonAsIntTransform.create())
+            .stage(ParseJsonTransform.of())
+            .stage(JsonAsIntTransform.of())
             .build();
 
-        DataExtractor row = new DataExtractor();
+        Extractor row = new Extractor();
         row.setPipeline(original);
 
         Integer result = row.pipeline().execute(PipelineContext.empty());
@@ -63,15 +62,15 @@ class DataExtractorTest {
     }
 
     @Test
-    @DisplayName("Default DataExtractor has an empty-array definition_json")
+    @DisplayName("Default Extractor has an empty-array definitionJson")
     void defaultDefinitionIsEmpty() {
-        DataExtractor row = new DataExtractor();
+        Extractor row = new Extractor();
         assertThat(row.getDefinitionJson(), is(equalTo("[]")));
-        assertThat(row.getVisibility(), is(equalTo(DataExtractor.Visibility.PRIVATE)));
+        assertThat(row.getVisibility(), is(equalTo(Extractor.Visibility.PRIVATE)));
     }
 
-    private static DataExtractor newExtractor(long ownerId, DataExtractor.Visibility v, Long guildId) {
-        DataExtractor row = new DataExtractor();
+    private static Extractor newExtractor(long ownerId, Extractor.Visibility v, Long guildId) {
+        Extractor row = new Extractor();
         row.setId(UUID.randomUUID());
         row.setOwnerUserId(ownerId);
         row.setShortId("test");

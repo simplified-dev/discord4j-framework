@@ -11,7 +11,6 @@ import dev.sbs.discordapi.response.handler.HistoryHandler;
 import dev.sbs.discordapi.response.handler.PaginationHandler;
 import dev.sbs.discordapi.response.page.Page;
 import dev.sbs.discordapi.response.page.TreePage;
-import dev.sbs.discordapi.response.page.editor.EditorPage;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentList;
 import dev.simplified.collection.query.SearchFunction;
@@ -71,8 +70,6 @@ public final class Response {
     private final @NotNull AllowedMentions allowedMentions;
     private final int timeToLive;
     private final boolean ephemeral;
-    private final boolean persistent;
-    private final @NotNull Optional<String> persistentBuilderId;
     private final @NotNull ConcurrentList<Attachment> attachments;
     private final @NotNull Function<MessageContext<MessageCreateEvent>, Mono<Void>> createInteraction;
     private final boolean renderingPagingComponents;
@@ -94,8 +91,6 @@ public final class Response {
             .withReference(response.getReferenceId())
             .withReactorScheduler(response.getReactorScheduler())
             .withTimeToLive(response.getTimeToLive())
-            .isPersistent(response.isPersistent())
-            .withPersistentBuilderId(response.getPersistentBuilderId())
             .isRenderingPagingComponents(response.isRenderingPagingComponents())
             .isEphemeral(response.isEphemeral())
             .withPageHistory(response.getHistoryHandler().getIdentifierHistory())
@@ -353,8 +348,6 @@ public final class Response {
         private int timeToLive = 10;
         private boolean renderingPagingComponents = true;
         private boolean ephemeral = false;
-        private boolean persistent = false;
-        private Optional<String> persistentBuilderId = Optional.empty();
         @BuildFlag(nonNull = true)
         private AllowedMentions allowedMentions = AllowedMentions.suppressEveryone();
         private Optional<Function<MessageContext<MessageCreateEvent>, Mono<Void>>> createInteraction = Optional.empty();
@@ -381,43 +374,6 @@ public final class Response {
          */
         public Builder withBot(@NotNull DiscordBot discordBot) {
             this.discordBot = discordBot;
-            return this;
-        }
-
-        /**
-         * Marks this {@link Response} as persistent, so that it is written to
-         * the cold tier of the
-         * {@link dev.sbs.discordapi.handler.response.ResponseLocator ResponseLocator}
-         * (JPA-backed) and survives bot restarts. Requires a matching
-         * {@link dev.sbs.discordapi.response.PersistentResponse @PersistentResponse}
-         * builder method on the dispatching command or
-         * {@link dev.sbs.discordapi.listener.PersistentComponentListener PersistentComponentListener}.
-         *
-         * @param persistent true to mark persistent
-         */
-        public Builder isPersistent(boolean persistent) {
-            this.persistent = persistent;
-            return this;
-        }
-
-        /**
-         * Sets the discriminator id for the owning {@code @PersistentResponse}
-         * method, used only when a single class hosts multiple builders.
-         *
-         * @param id the discriminator id matching the {@code @PersistentResponse(id)} value
-         */
-        public Builder withPersistentBuilderId(@NotNull String id) {
-            return this.withPersistentBuilderId(Optional.of(id));
-        }
-
-        /**
-         * Sets the discriminator id for the owning {@code @PersistentResponse}
-         * method, used only when a single class hosts multiple builders.
-         *
-         * @param id an optional discriminator id
-         */
-        public Builder withPersistentBuilderId(@NotNull Optional<String> id) {
-            this.persistentBuilderId = id;
             return this;
         }
 
@@ -726,9 +682,6 @@ public final class Response {
          * @return a built {@link Response}
          */
         public @NotNull Response build() {
-            if (this.persistent && this.pages.stream().anyMatch(EditorPage.class::isInstance))
-                throw new IllegalStateException("Persistent responses are not yet supported for EditorPage");
-
             Reflection.validateFlags(this);
 
             Response response = new Response(
@@ -739,8 +692,6 @@ public final class Response {
                 this.allowedMentions,
                 this.timeToLive,
                 this.ephemeral,
-                this.persistent,
-                this.persistentBuilderId,
                 this.attachments,
                 this.createInteraction.orElse(__ -> Mono.empty()),
                 this.renderingPagingComponents,

@@ -363,19 +363,50 @@ public interface MessageContext<T extends Event> extends EventContext<T> {
     /** The {@link Snowflake} identifier of the message associated with this context. */
     Snowflake getMessageId();
 
-    /** The cached {@link Response} from the response locator. */
+    /**
+     * The cached {@link Response} from the response locator if one exists,
+     * or empty for eternal/dispatched contexts whose backing message has no
+     * cache entry.
+     */
+    default @NotNull Optional<Response> findResponse() {
+        return this.findResponseCacheEntry().map(CachedResponse::getResponse);
+    }
+
+    /**
+     * The {@link CachedResponse} entry for this context's response id if one
+     * exists, or empty for eternal/dispatched contexts whose backing message
+     * has no cache entry.
+     */
+    default @NotNull Optional<CachedResponse> findResponseCacheEntry() {
+        return this.getDiscordBot()
+            .getResponseLocator()
+            .findByResponseId(this.getResponseId())
+            .blockOptional();
+    }
+
+    /**
+     * The cached {@link Response} from the response locator.
+     *
+     * @throws IllegalStateException when invoked on an eternal/dispatched
+     *     context whose backing message has no cache entry; use
+     *     {@link #findResponse()} for the optional variant
+     */
     default @NotNull Response getResponse() {
         return this.getResponseCacheEntry().getResponse();
     }
 
-    /** The {@link CachedResponse} entry for this context's response id. */
+    /**
+     * The {@link CachedResponse} entry for this context's response id.
+     *
+     * @throws IllegalStateException when invoked on an eternal/dispatched
+     *     context whose backing message has no cache entry; use
+     *     {@link #findResponseCacheEntry()} for the optional variant
+     */
     default @NotNull CachedResponse getResponseCacheEntry() {
-        return this.getDiscordBot()
-            .getResponseLocator()
-            .findByResponseId(this.getResponseId())
-            .blockOptional()
+        return this.findResponseCacheEntry()
             .orElseThrow(() -> new IllegalStateException(
                 "No cached response entry exists for response id " + this.getResponseId()
+                    + " (the context may be eternal or dispatched without a cached entry; use findResponse()/findResponseCacheEntry())"
             ));
     }
 

@@ -1,7 +1,7 @@
 package dev.sbs.discordapi.feature.extractor.ui;
 
 import dev.sbs.dataflow.DataPipeline;
-import dev.sbs.discordapi.feature.extractor.jpa.DataExtractor;
+import dev.sbs.discordapi.feature.extractor.Extractor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.experimental.Accessors;
@@ -31,7 +31,7 @@ public final class PipelineBuilderState {
     private final @NotNull DataPipeline pipeline;
     private final @NotNull String label;
     private final @NotNull String shortId;
-    private final @Nullable DataExtractor backingRow;
+    private final @Nullable Extractor backingRow;
     private final @Nullable Object latestResult;
     private final @Nullable String banner;
 
@@ -49,12 +49,12 @@ public final class PipelineBuilderState {
     }
 
     /**
-     * Initial state for editing the given saved {@link DataExtractor}.
+     * Initial state for editing the given saved {@link Extractor}.
      *
      * @param row the row being edited
      * @return a state whose pipeline matches {@code row}'s definition
      */
-    public static @NotNull PipelineBuilderState forEditing(@NotNull DataExtractor row) {
+    public static @NotNull PipelineBuilderState forEditing(@NotNull Extractor row) {
         return PipelineBuilderState.builder()
             .pipeline(row.pipeline())
             .label(row.getLabel())

@@ -36,4 +36,20 @@ public final class ButtonListener extends ComponentListener<ButtonInteractionEve
         );
     }
 
+    @Override
+    protected @NotNull ButtonContext getEternalContext(@NotNull ButtonInteractionEvent event) {
+        Button synthetic = Button.builder()
+            .withIdentifier(event.getCustomId())
+            .withStyle(Button.Style.SECONDARY)
+            .withLabel("eternal")
+            .build();
+
+        return ButtonContext.ofEternal(
+            this.getDiscordBot(),
+            event,
+            synthetic,
+            computeEternalResponseId(event)
+        );
+    }
+
 }

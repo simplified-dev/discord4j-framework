@@ -6,8 +6,8 @@ import dev.sbs.discordapi.component.capability.EventInteractable;
 import dev.sbs.discordapi.component.capability.UserInteractable;
 import dev.sbs.discordapi.context.capability.ExceptionContext;
 import dev.sbs.discordapi.context.scope.ComponentContext;
-import dev.sbs.discordapi.handler.DispatchingClassContextKey;
-import dev.sbs.discordapi.handler.PersistentComponentHandler;
+import dev.sbs.discordapi.handler.ComponentDispatcher;
+import dev.sbs.discordapi.handler.ComponentRouteTtlContextKey;
 import dev.sbs.discordapi.handler.response.CachedResponse;
 import dev.sbs.discordapi.listener.DiscordListener;
 import dev.sbs.discordapi.response.Response;
@@ -19,19 +19,31 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
- * Abstract base for component interaction listeners, providing the shared flow of
- * matching an incoming event to a {@link CachedResponse} via the
+ * Abstract base for component interaction listeners, providing the shared flow
+ * of matching an incoming event to a {@link CachedResponse} via the
  * {@link dev.sbs.discordapi.handler.response.ResponseLocator ResponseLocator},
  * locating the interacted {@link EventInteractable}, and dispatching to its
- * registered interaction handler.
+ * registered handler.
  *
  * <p>
- * Concrete subclasses ({@link ButtonListener}, {@link SelectMenuListener},
- * {@link ModalListener}) supply the appropriate {@link ComponentContext} via
- * {@link #getContext}.
+ * Dispatch precedence:
+ * <ul>
+ *   <li><b>Cache hit + annotation route</b> - the matched
+ *       {@link dev.sbs.discordapi.listener.Component @Component} handler is invoked
+ *       with a context built from the cached response</li>
+ *   <li><b>Cache hit + inline component</b> - the cached component's
+ *       interaction lambda is invoked</li>
+ *   <li><b>Cache miss + annotation route</b> - an eternal context is
+ *       synthesized and the {@code @Component} handler is invoked</li>
+ *   <li><b>Cache miss + no route</b> - the interaction is dropped via
+ *       {@code deferEdit().then()}</li>
+ * </ul>
  *
  * @param <E> the Discord4J component interaction event type
  * @param <C> the context type passed to the component's interaction handler
@@ -59,37 +71,38 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
 
         return this.getDiscordBot()
             .getResponseLocator()
-            .findForInteraction(event)
-            .switchIfEmpty(event.deferEdit().then(Mono.empty()))
+            .findByMessage(event.getMessageId())
             .flatMap(entry -> this.handleEvent(event, entry))
+            .switchIfEmpty(Mono.defer(() -> this.tryDispatchEternal(event)))
             .subscribeOn(Schedulers.boundedElastic());
     }
 
     /**
      * Routes a matched cache entry to the appropriate dispatch path. Override
      * for special handling (e.g. modals) that needs to bypass the standard
-     * tree walk. Persistent entries first try the
-     * {@link PersistentComponentHandler} routing registry for an explicit
-     * {@code @Component}-annotated handler; if no registered route exists,
-     * the inline path is used as a fallback.
+     * tree walk. The annotation dispatcher is consulted first; if no route
+     * matches, the inline path is used as a fallback.
      */
     protected Mono<Void> handleEvent(@NotNull E event, @NotNull CachedResponse entry) {
-        if (entry.isPersistent()) {
-            Optional<PersistentComponentHandler.ComponentRoute> route = this.getDiscordBot()
-                .getPersistentComponentHandler()
-                .findComponent(event.getCustomId());
+        Optional<ComponentDispatcher.MatchedRoute> matched = this.getDiscordBot()
+            .getComponentDispatcher()
+            .findRoute(event.getCustomId());
 
-            if (route.isPresent())
-                return this.dispatchPersistent(event, entry, route.get());
+        if (matched.isPresent()) {
+            ComponentDispatcher.MatchedRoute route = matched.get();
+            if (route.getKind() == ComponentDispatcher.MatchedRoute.Kind.AMBIGUOUS)
+                return event.deferEdit().then();
+
+            return this.dispatchAnnotation(event, entry, route.getRoute().orElseThrow());
         }
 
         return this.dispatchInline(event, entry);
     }
 
     /**
-     * Legacy in-memory dispatch path: walks the response's component tree to
-     * find a matching {@link UserInteractable} by custom id and invokes its
-     * inline interaction lambda.
+     * Inline dispatch path: walks the response's component tree to find a
+     * matching {@link UserInteractable} by custom id and invokes its inline
+     * interaction lambda.
      */
     private @NotNull Mono<Void> dispatchInline(@NotNull E event, @NotNull CachedResponse entry) {
         entry.setBusy();
@@ -110,14 +123,13 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
     }
 
     /**
-     * Persistent dispatch path: invokes the {@link PersistentComponentHandler}
-     * route via its {@link java.lang.invoke.MethodHandle MethodHandle} and
-     * decorates the resulting publisher with the dispatching class context
-     * key so any nested {@link dev.sbs.discordapi.context.EventContext#reply
-     * reply} call sees the registered owner class.
+     * Annotation dispatch path: invokes the {@link ComponentDispatcher} route
+     * via its {@link java.lang.invoke.MethodHandle MethodHandle} and decorates
+     * the resulting publisher with the per-route cache TTL context key when
+     * the route declares one.
      */
     @SuppressWarnings("unchecked")
-    private @NotNull Mono<Void> dispatchPersistent(@NotNull E event, @NotNull CachedResponse entry, @NotNull PersistentComponentHandler.ComponentRoute route) {
+    private @NotNull Mono<Void> dispatchAnnotation(@NotNull E event, @NotNull CachedResponse entry, @NotNull ComponentDispatcher.ComponentRoute route) {
         entry.setBusy();
         Optional<CachedResponse> followup = entry.isFollowup() ? Optional.of(entry) : Optional.empty();
         CachedResponse target = followup.orElse(entry);
@@ -152,9 +164,8 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
 
         C context = this.getContext(event, target.getResponse(), matched.get(), followup);
 
-        return Mono.from((Publisher<Void>) tryInvoke(route, context))
-            .checkpoint("ComponentListener#dispatchPersistent Processing")
-            .contextWrite(reactorCtx -> reactorCtx.put(DispatchingClassContextKey.KEY, route.getOwnerClass()))
+        Mono<Void> dispatchMono = Mono.from((Publisher<Void>) tryInvoke(route, context))
+            .checkpoint("ComponentListener#dispatchAnnotation Processing")
             .onErrorResume(throwable -> this.getDiscordBot().getExceptionHandler().handleException(
                 ExceptionContext.of(
                     this.getDiscordBot(),
@@ -169,11 +180,74 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
             ))
             .then(entry.updateLastInteract())
             .then();
+
+        if (route.getCacheTtl() > 0) {
+            Duration ttl = Duration.ofSeconds(route.getCacheTtl());
+            dispatchMono = dispatchMono.contextWrite(reactorCtx -> reactorCtx.put(ComponentRouteTtlContextKey.KEY, ttl));
+        }
+
+        return dispatchMono;
+    }
+
+    /**
+     * Eternal dispatch path: invoked when the response locator has no cached
+     * entry for the incoming event's message. Looks up an annotation route
+     * for the {@code customId}; on hit, builds an eternal context via
+     * {@link #getEternalContext(ComponentInteractionEvent)} and invokes the
+     * route. On miss or ambiguous match, drops the interaction with
+     * {@code deferEdit}.
+     */
+    @SuppressWarnings("unchecked")
+    private @NotNull Mono<Void> tryDispatchEternal(@NotNull E event) {
+        Optional<ComponentDispatcher.MatchedRoute> matched = this.getDiscordBot()
+            .getComponentDispatcher()
+            .findRoute(event.getCustomId());
+
+        if (matched.isEmpty())
+            return event.deferEdit().then();
+
+        ComponentDispatcher.MatchedRoute route = matched.get();
+        if (route.getKind() == ComponentDispatcher.MatchedRoute.Kind.AMBIGUOUS)
+            return event.deferEdit().then();
+
+        ComponentDispatcher.ComponentRoute componentRoute = route.getRoute().orElseThrow();
+        Class<?> expected = componentRoute.getExpectedContextType();
+        if (!this.expectedContextMatches(expected)) {
+            this.getLog().warn(
+                "@Component route '{}' on {} expected {} but listener {} dispatches a different context type",
+                event.getCustomId(),
+                componentRoute.getOwnerClass().getName(),
+                expected.getSimpleName(),
+                this.getClass().getSimpleName()
+            );
+            return event.deferEdit().then();
+        }
+
+        C context = this.getEternalContext(event);
+
+        Mono<Void> dispatchMono = Mono.from((Publisher<Void>) tryInvoke(componentRoute, context))
+            .checkpoint("ComponentListener#tryDispatchEternal Processing")
+            .onErrorResume(throwable -> this.getDiscordBot().getExceptionHandler().handleException(
+                ExceptionContext.of(
+                    this.getDiscordBot(),
+                    context,
+                    throwable,
+                    String.format("%s Exception", this.getTitle())
+                )
+            ))
+            .then();
+
+        if (componentRoute.getCacheTtl() > 0) {
+            Duration ttl = Duration.ofSeconds(componentRoute.getCacheTtl());
+            dispatchMono = dispatchMono.contextWrite(reactorCtx -> reactorCtx.put(ComponentRouteTtlContextKey.KEY, ttl));
+        }
+
+        return dispatchMono;
     }
 
     /**
      * Returns whether the given expected context type from a registered
-     * persistent route matches what this listener dispatches.
+     * annotation route matches what this listener dispatches.
      */
     private boolean expectedContextMatches(@NotNull Class<?> expected) {
         return expected.isAssignableFrom(this.getContextClass())
@@ -187,7 +261,7 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
     }
 
     /** Reflection helper that throws checked exceptions through {@link RuntimeException}. */
-    private static Object tryInvoke(@NotNull PersistentComponentHandler.ComponentRoute route, @NotNull Object context) {
+    private static Object tryInvoke(@NotNull ComponentDispatcher.ComponentRoute route, @NotNull Object context) {
         try {
             return route.getMethodHandle().invoke(route.getInstance(), context);
         } catch (Throwable t) {
@@ -196,7 +270,20 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
     }
 
     /**
-     * Creates the typed context for the given component interaction.
+     * Computes the deterministic eternal {@link UUID} for the given event's
+     * message snowflake. The same message always yields the same UUID, so a
+     * synthesized context for an eternal interaction is stable across
+     * dispatches.
+     *
+     * @param event the component interaction event
+     * @return the deterministic eternal response id
+     */
+    protected static @NotNull UUID computeEternalResponseId(@NotNull ComponentInteractionEvent event) {
+        return UUID.nameUUIDFromBytes(("eternal:" + event.getMessageId().asLong()).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Creates the typed context for a cached component interaction.
      *
      * @param event the Discord4J interaction event
      * @param cachedMessage the cached response containing the component
@@ -205,6 +292,20 @@ public abstract class ComponentListener<E extends ComponentInteractionEvent, C e
      * @return the constructed context
      */
     protected abstract @NotNull C getContext(@NotNull E event, @NotNull Response cachedMessage, @NotNull T component, @NotNull Optional<CachedResponse> followup);
+
+    /**
+     * Creates the typed context for an annotation-dispatched eternal
+     * interaction whose backing message has no cache entry. Subclasses
+     * synthesize a minimal component carrying the {@code customId} (and any
+     * Discord-side input values) and return a context whose
+     * {@link dev.sbs.discordapi.context.EventContext#getResponseId() responseId}
+     * is the deterministic id from
+     * {@link #computeEternalResponseId(ComponentInteractionEvent)}.
+     *
+     * @param event the Discord4J interaction event
+     * @return the constructed eternal context
+     */
+    protected abstract @NotNull C getEternalContext(@NotNull E event);
 
     /**
      * Executes the component's registered inline interaction handler within an

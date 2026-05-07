@@ -36,4 +36,18 @@ public final class CheckboxListener extends ComponentListener<ComponentInteracti
         );
     }
 
+    @Override
+    protected @NotNull CheckboxContext getEternalContext(@NotNull ComponentInteractionEvent event) {
+        Checkbox synthetic = Checkbox.builder()
+            .withIdentifier(event.getCustomId())
+            .build();
+
+        return CheckboxContext.ofEternal(
+            this.getDiscordBot(),
+            event,
+            synthetic,
+            computeEternalResponseId(event)
+        );
+    }
+
 }

@@ -2,7 +2,6 @@ package dev.sbs.discordapi.handler.response;
 
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentList;
-import dev.simplified.persistence.type.GsonType;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
@@ -12,25 +11,13 @@ import java.util.Optional;
 
 /**
  * Serializable snapshot of a {@link dev.sbs.discordapi.response.Response Response}'s
- * mutable navigation state, persisted alongside each persistent response row
- * so that the current page, item page, and history stack survive bot
- * restarts.
+ * mutable navigation state.
  *
  * <p>
- * Only the mutable navigation coordinates are stored here - the response's
- * structural content (embeds, components, page definitions) is reconstructed
- * on hydration by invoking the associated {@link dev.sbs.discordapi.response.PersistentResponse
- * PersistentResponse} builder method. This minimises database writes and
- * avoids serializing un-serializable interaction lambdas.
- *
- * <p>
- * Stored in the {@code nav_state_json} column of the persistent response
- * table, serialized via Gson. Marked with {@link GsonType} so the persistence
- * library auto-registers a {@code GsonJsonType<NavState>} when this class
- * appears as a field type on a {@link dev.simplified.persistence.JpaModel}.
+ * Captures the current page identifier, the current paginated item index, and
+ * the ordered history of visited page identifiers used by back-navigation.
  */
 @Getter
-@GsonType
 @RequiredArgsConstructor
 public final class NavState implements Serializable {
 
@@ -48,7 +35,7 @@ public final class NavState implements Serializable {
         return new NavState(Optional.empty(), 0, Concurrent.newList());
     }
 
-    /** Returns a mutable copy of this state for incremental updates. */
+    /** Returns a copy of this state with the given current page id. */
     public @NotNull NavState withCurrentPageId(@NotNull String pageId) {
         ConcurrentList<String> history = Concurrent.newList(this.pageHistory);
         return new NavState(Optional.of(pageId), this.currentItemPage, history);

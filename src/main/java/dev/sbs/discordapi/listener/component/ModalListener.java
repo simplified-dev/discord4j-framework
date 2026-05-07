@@ -5,11 +5,15 @@ import dev.sbs.discordapi.component.interaction.Modal;
 import dev.sbs.discordapi.context.component.ModalContext;
 import dev.sbs.discordapi.handler.response.CachedResponse;
 import dev.sbs.discordapi.response.Response;
+import dev.simplified.collection.Concurrent;
+import dev.simplified.collection.ConcurrentList;
+import dev.simplified.reflection.Reflection;
 import discord4j.core.event.domain.interaction.ModalSubmitInteractionEvent;
 import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Mono;
 
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * Listener for {@link Modal} submit interactions, matching the submitted modal
@@ -35,6 +39,29 @@ public final class ModalListener extends ComponentListener<ModalSubmitInteractio
             response,
             component,
             followup
+        );
+    }
+
+    @Override
+    protected @NotNull ModalContext getEternalContext(@NotNull ModalSubmitInteractionEvent event) {
+        // Modal's Builder validation requires a non-empty title and components,
+        // neither of which is meaningful for an eternal submit synthesized from
+        // an event whose backing message has no cache entry. Instantiate the
+        // Modal directly via reflection over its private all-args constructor
+        // so the @Component handler still receives a Modal stub carrying the
+        // submitted customId.
+        Modal synthetic = new Reflection<>(Modal.class).newInstance(
+            event.getCustomId(),
+            Optional.<String>empty(),
+            (ConcurrentList<?>) Concurrent.newUnmodifiableList(),
+            (Function<ModalContext, Mono<Void>>) ctx -> ctx.deferEdit()
+        );
+
+        return ModalContext.ofEternal(
+            this.getDiscordBot(),
+            event,
+            synthetic,
+            computeEternalResponseId(event)
         );
     }
 

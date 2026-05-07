@@ -67,6 +67,28 @@ public interface RadioGroupContext extends ActionComponentContext {
     }
 
     /**
+     * Creates a new eternal {@code RadioGroupContext} for an
+     * annotation-dispatched interaction whose backing message has no cache
+     * entry. The {@link #getResponseId() responseId} is a deterministic UUID
+     * derived from the message snowflake.
+     *
+     * @param discordBot the bot instance
+     * @param event the component interaction event
+     * @param radioGroup the synthesized radio group stub carrying the {@code customId} and selected value
+     * @param eternalResponseId the deterministic eternal response id
+     * @return a new eternal radio group context
+     */
+    static @NotNull RadioGroupContext ofEternal(@NotNull DiscordBot discordBot, @NotNull ComponentInteractionEvent event, @NotNull RadioGroup radioGroup, @NotNull UUID eternalResponseId) {
+        return new Impl(
+            discordBot,
+            event,
+            eternalResponseId,
+            radioGroup,
+            Optional.empty()
+        );
+    }
+
+    /**
      * Default implementation of {@link RadioGroupContext}.
      */
     @Getter
