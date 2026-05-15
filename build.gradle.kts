@@ -35,13 +35,13 @@ dependencies {
     api(libs.discord4j)
 
     // Simplified Libraries (extracted to github.com/simplified-dev)
-    api("com.github.simplified-dev:collections:master-SNAPSHOT")
-    api("com.github.simplified-dev:utils:master-SNAPSHOT")
-    api("com.github.simplified-dev:reflection:master-SNAPSHOT")
-    api("com.github.simplified-dev:scheduler:master-SNAPSHOT")
-    api("com.github.simplified-dev:yaml:master-SNAPSHOT")
-    api("com.github.simplified-dev:client:master-SNAPSHOT")
-    api("com.github.simplified-dev:dataflow:master-9d230e0a9f-1")
+    api("com.github.simplified-dev:collections") { version { strictly("6586657") } }
+    api("com.github.simplified-dev:utils") { version { strictly("ca4cbca") } }
+    api("com.github.simplified-dev:reflection") { version { strictly("746e607") } }
+    api("com.github.simplified-dev:scheduler") { version { strictly("695f985") } }
+    api("com.github.simplified-dev:yaml") { version { strictly("728bffc") } }
+    api("com.github.simplified-dev:client") { version { strictly("6a11168") } }
+    api("com.github.simplified-dev:dataflow") { version { strictly("670375c") } }
 
     implementation(libs.sentry)
 }
