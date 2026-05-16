@@ -1,15 +1,18 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.DataPipeline;
-import dev.sbs.dataflow.PipelineContext;
-import dev.sbs.dataflow.stage.filter.numeric.IntGreaterThanFilter;
-import dev.sbs.dataflow.stage.source.EmbedSource;
-import dev.sbs.dataflow.stage.source.LiteralSource;
-import dev.sbs.dataflow.stage.source.UrlSource;
-import dev.sbs.dataflow.stage.terminal.collect.MapCollect;
-import dev.sbs.dataflow.stage.transform.dom.DomOuterHtmlTransform;
-import dev.sbs.dataflow.stage.transform.dom.NodeTextTransform;
-import dev.sbs.dataflow.stage.transform.dom.ParseHtmlTransform;
+import dev.simplified.dataflow.DataPipeline;
+import dev.simplified.dataflow.DataTypes;
+import dev.simplified.dataflow.PipelineContext;
+import dev.simplified.dataflow.stage.filter.numeric.IntGreaterThanFilter;
+import dev.simplified.dataflow.stage.source.EmbedSource;
+import dev.simplified.dataflow.stage.source.LiteralSource;
+import dev.simplified.dataflow.stage.source.UrlSource;
+import dev.simplified.dataflow.stage.terminal.collect.MapCollect;
+import dev.simplified.dataflow.stage.transform.dom.DomOuterHtmlTransform;
+import dev.simplified.dataflow.stage.transform.dom.DomTextTransform;
+import dev.simplified.dataflow.stage.transform.dom.ParseHtmlTransform;
+import dev.simplified.dataflow.stage.transform.json.JsonAsIntTransform;
+import dev.simplified.dataflow.stage.transform.json.ParseJsonTransform;
 import dev.simplified.discordapi.feature.extractor.Extractor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,7 +50,7 @@ class PipelineBuilderSessionTest {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
         session.appendStage(LiteralSource.class, Map.of("value", "<p>x</p>", "outputType", "RAW_HTML"));
         session.appendStage(ParseHtmlTransform.class, Map.of());
-        session.appendStage(NodeTextTransform.class, Map.of());
+        session.appendStage(DomTextTransform.class, Map.of());
         assertThat(session.state().pipeline().stages().size(), is(equalTo(3)));
     }
 
@@ -135,7 +138,7 @@ class PipelineBuilderSessionTest {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
         session.appendStage(LiteralSource.class, Map.of("value", "<p>hello</p>", "outputType", "RAW_HTML"));
         session.appendStage(ParseHtmlTransform.class, Map.of());
-        session.appendStage(NodeTextTransform.class, Map.of());
+        session.appendStage(DomTextTransform.class, Map.of());
         session.runPipeline(PipelineContext.defaults());
         assertThat(session.state().latestResult(), is(equalTo("hello")));
         assertThat(session.state().banner(), is(nullValue()));
@@ -157,7 +160,7 @@ class PipelineBuilderSessionTest {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
         session.appendStage(LiteralSource.class, Map.of("value", "<p>x</p>", "outputType", "RAW_HTML"));
         session.appendStage(ParseHtmlTransform.class, Map.of());
-        session.appendStage(NodeTextTransform.class, Map.of());
+        session.appendStage(DomTextTransform.class, Map.of());
         PipelineBuilderSession.SaveValidation v = session.validateSaveInputs(Map.of(
             SaveExtractorModal.FIELD_LABEL, "Wiki Damage",
             SaveExtractorModal.FIELD_SHORT_ID, "wiki_dmg",
@@ -231,7 +234,7 @@ class PipelineBuilderSessionTest {
         // Build a session whose pipeline ends in a real (empty) MapCollect (the new home of
         // the old Branch concept). MapCollect cannot be constructed via the modal cascade
         // because its NamedChains config is sub-pipeline-only, so we drop one in directly.
-        MapCollect<?> branch = MapCollect.over(dev.sbs.dataflow.DataTypes.DOM_NODE).build();
+        MapCollect<?> branch = MapCollect.over(DataTypes.DOM_NODE).build();
         DataPipeline p = DataPipeline.builder()
             .source(LiteralSource.rawHtml("<p/>"))
             .stage(ParseHtmlTransform.of())
@@ -265,10 +268,10 @@ class PipelineBuilderSessionTest {
     void appendIntoSubChain() {
         PipelineBuilderSession session = sessionWithBranch();
         session.addBranchOutput(2, "dmg");
-        session.appendBranchStage(2, "dmg", NodeTextTransform.class, Map.of());
+        session.appendBranchStage(2, "dmg", DomTextTransform.class, Map.of());
         MapCollect<?> branch = (MapCollect<?>) session.state().pipeline().stages().get(2);
         assertThat(branch.outputs().chains().get("dmg").size(), is(equalTo(1)));
-        assertThat(branch.outputs().chains().get("dmg").stages().get(0).kindId(), is(equalTo("TRANSFORM_NODE_TEXT")));
+        assertThat(branch.outputs().chains().get("dmg").stages().getFirst().kindId(), is(equalTo("TRANSFORM_NODE_TEXT")));
     }
 
     @Test
@@ -287,10 +290,10 @@ class PipelineBuilderSessionTest {
     void replaceInSubChain() {
         PipelineBuilderSession session = sessionWithBranch();
         session.addBranchOutput(2, "dmg");
-        session.appendBranchStage(2, "dmg", NodeTextTransform.class, Map.of());
+        session.appendBranchStage(2, "dmg", DomTextTransform.class, Map.of());
         session.replaceBranchStage(2, "dmg", 0, DomOuterHtmlTransform.class, Map.of());
         MapCollect<?> branch = (MapCollect<?>) session.state().pipeline().stages().get(2);
-        assertThat(branch.outputs().chains().get("dmg").stages().get(0).kindId(), is(equalTo("TRANSFORM_DOM_OUTER_HTML")));
+        assertThat(branch.outputs().chains().get("dmg").stages().getFirst().kindId(), is(equalTo("TRANSFORM_DOM_OUTER_HTML")));
     }
 
     @Test
@@ -298,7 +301,7 @@ class PipelineBuilderSessionTest {
     void removeFromSubChain() {
         PipelineBuilderSession session = sessionWithBranch();
         session.addBranchOutput(2, "dmg");
-        session.appendBranchStage(2, "dmg", NodeTextTransform.class, Map.of());
+        session.appendBranchStage(2, "dmg", DomTextTransform.class, Map.of());
         session.removeBranchStage(2, "dmg", 0);
         MapCollect<?> branch = (MapCollect<?>) session.state().pipeline().stages().get(2);
         assertThat(branch.outputs().chains().get("dmg").isEmpty(), is(true));
@@ -311,7 +314,7 @@ class PipelineBuilderSessionTest {
         session.addBranchOutput(2, "dmg");
         session.removeBranchOutput(2, "dmg");
         MapCollect<?> branch = (MapCollect<?>) session.state().pipeline().stages().get(2);
-        assertThat(branch.outputs().chains().keySet().isEmpty(), is(true));
+        assertThat(branch.outputs().chains().isEmpty(), is(true));
     }
 
     @Test
@@ -334,12 +337,12 @@ class PipelineBuilderSessionTest {
         saved.setShortId("inner");
         saved.setPipeline(DataPipeline.builder()
             .source(LiteralSource.rawJson("42"))
-            .stage(dev.sbs.dataflow.stage.transform.json.ParseJsonTransform.of())
-            .stage(dev.sbs.dataflow.stage.transform.json.JsonAsIntTransform.of())
+            .stage(ParseJsonTransform.of())
+            .stage(JsonAsIntTransform.of())
             .build());
         session.appendEmbedStage(saved);
         assertThat(session.state().pipeline().stages().size(), is(equalTo(1)));
-        assertThat(session.state().pipeline().stages().get(0), is(org.hamcrest.Matchers.instanceOf(EmbedSource.class)));
+        assertThat(session.state().pipeline().stages().getFirst(), is(org.hamcrest.Matchers.instanceOf(EmbedSource.class)));
     }
 
     @Test

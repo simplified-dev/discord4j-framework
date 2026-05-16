@@ -1,9 +1,9 @@
 package dev.simplified.discordapi.feature.extractor.command;
 
-import dev.sbs.dataflow.PipelineContext;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentList;
 import dev.simplified.collection.ConcurrentMap;
+import dev.simplified.dataflow.PipelineContext;
 import dev.simplified.discordapi.DiscordBot;
 import dev.simplified.discordapi.command.DiscordCommand;
 import dev.simplified.discordapi.command.Structure;

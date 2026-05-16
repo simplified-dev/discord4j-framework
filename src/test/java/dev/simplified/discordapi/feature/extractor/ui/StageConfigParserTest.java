@@ -1,9 +1,9 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.stage.filter.numeric.IntGreaterThanFilter;
-import dev.sbs.dataflow.stage.filter.string.StringContainsFilter;
-import dev.sbs.dataflow.stage.terminal.collect.ListCollect;
-import dev.sbs.dataflow.stage.transform.dom.ParseHtmlTransform;
+import dev.simplified.dataflow.stage.filter.numeric.IntGreaterThanFilter;
+import dev.simplified.dataflow.stage.filter.string.StringContainsFilter;
+import dev.simplified.dataflow.stage.terminal.collect.ListCollect;
+import dev.simplified.dataflow.stage.transform.dom.ParseHtmlTransform;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

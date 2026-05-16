@@ -1,8 +1,8 @@
 package dev.simplified.discordapi.feature.extractor;
 
-import dev.sbs.dataflow.DataPipeline;
-import dev.sbs.dataflow.PipelineContext;
-import dev.sbs.dataflow.ValidationReport;
+import dev.simplified.dataflow.DataPipeline;
+import dev.simplified.dataflow.PipelineContext;
+import dev.simplified.dataflow.ValidationReport;
 import dev.simplified.discordapi.feature.extractor.ui.ExtractorResultFormatter;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;

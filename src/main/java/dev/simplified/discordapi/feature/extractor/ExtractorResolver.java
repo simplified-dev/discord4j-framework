@@ -1,8 +1,8 @@
 package dev.simplified.discordapi.feature.extractor;
 
-import dev.sbs.dataflow.DataPipeline;
-import dev.sbs.dataflow.DataPipelineResolver;
-import dev.sbs.dataflow.PipelineContext;
+import dev.simplified.dataflow.DataPipeline;
+import dev.simplified.dataflow.DataPipelineResolver;
+import dev.simplified.dataflow.PipelineContext;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;

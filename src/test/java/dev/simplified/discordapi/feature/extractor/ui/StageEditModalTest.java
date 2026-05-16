@@ -1,11 +1,11 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.DataTypes;
-import dev.sbs.dataflow.stage.StageConfig;
-import dev.sbs.dataflow.stage.source.LiteralSource;
-import dev.sbs.dataflow.stage.terminal.collect.ListCollect;
-import dev.sbs.dataflow.stage.transform.dom.ParseHtmlTransform;
-import dev.sbs.dataflow.stage.transform.string.RegexExtractTransform;
+import dev.simplified.dataflow.DataTypes;
+import dev.simplified.dataflow.stage.StageConfig;
+import dev.simplified.dataflow.stage.source.LiteralSource;
+import dev.simplified.dataflow.stage.terminal.collect.ListCollect;
+import dev.simplified.dataflow.stage.transform.dom.ParseHtmlTransform;
+import dev.simplified.dataflow.stage.transform.string.RegexExtractTransform;
 import dev.simplified.discordapi.component.interaction.Modal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

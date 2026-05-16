@@ -1,12 +1,12 @@
 package dev.simplified.discordapi.feature.extractor;
 
-import dev.sbs.dataflow.DataPipeline;
-import dev.sbs.dataflow.PipelineContext;
-import dev.sbs.dataflow.stage.source.LiteralSource;
-import dev.sbs.dataflow.stage.transform.dom.NodeTextTransform;
-import dev.sbs.dataflow.stage.transform.dom.ParseHtmlTransform;
-import dev.sbs.dataflow.stage.transform.json.JsonAsIntTransform;
-import dev.sbs.dataflow.stage.transform.json.ParseJsonTransform;
+import dev.simplified.dataflow.DataPipeline;
+import dev.simplified.dataflow.PipelineContext;
+import dev.simplified.dataflow.stage.source.LiteralSource;
+import dev.simplified.dataflow.stage.transform.dom.DomTextTransform;
+import dev.simplified.dataflow.stage.transform.dom.ParseHtmlTransform;
+import dev.simplified.dataflow.stage.transform.json.JsonAsIntTransform;
+import dev.simplified.dataflow.stage.transform.json.ParseJsonTransform;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -107,7 +107,7 @@ class ExtractorRunnerTest {
         row.setPipeline(DataPipeline.builder()
             .source(LiteralSource.rawHtml("<p>hi</p>"))
             .stage(ParseHtmlTransform.of())
-            .stage(NodeTextTransform.of())
+            .stage(DomTextTransform.of())
             .build());
         store.save(row).block();
 

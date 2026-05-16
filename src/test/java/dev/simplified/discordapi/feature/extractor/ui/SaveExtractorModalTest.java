@@ -1,5 +1,6 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
+import dev.simplified.dataflow.DataPipeline;
 import dev.simplified.discordapi.component.interaction.Modal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,7 @@ class SaveExtractorModalTest {
     @DisplayName("Save modal pre-fills label and shortId from existing state")
     void prefilledFromState() {
         PipelineBuilderState state = PipelineBuilderState.builder()
-            .pipeline(dev.sbs.dataflow.DataPipeline.empty())
+            .pipeline(DataPipeline.empty())
             .label("Wiki Damage")
             .shortId("wiki_dmg")
             .build();

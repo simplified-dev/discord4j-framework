@@ -1,7 +1,7 @@
 package dev.simplified.discordapi.feature.extractor;
 
-import dev.sbs.dataflow.DataPipeline;
-import dev.sbs.dataflow.serde.PipelineGson;
+import dev.simplified.dataflow.DataPipeline;
+import dev.simplified.dataflow.serde.PipelineGson;
 import lombok.Getter;
 import lombok.Setter;
 import org.jetbrains.annotations.NotNull;

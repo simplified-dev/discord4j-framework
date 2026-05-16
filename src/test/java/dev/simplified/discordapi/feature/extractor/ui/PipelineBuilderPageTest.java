@@ -1,16 +1,16 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.DataPipeline;
-import dev.sbs.dataflow.DataTypes;
-import dev.sbs.dataflow.stage.filter.dom.DomTextContainsFilter;
-import dev.sbs.dataflow.stage.source.LiteralSource;
-import dev.sbs.dataflow.stage.terminal.collect.FirstCollect;
-import dev.sbs.dataflow.stage.transform.dom.CssSelectTransform;
-import dev.sbs.dataflow.stage.transform.dom.NodeTextTransform;
-import dev.sbs.dataflow.stage.transform.dom.NthChildTransform;
-import dev.sbs.dataflow.stage.transform.dom.ParseHtmlTransform;
-import dev.sbs.dataflow.stage.transform.primitive.ParseIntTransform;
-import dev.sbs.dataflow.stage.transform.string.RegexExtractTransform;
+import dev.simplified.dataflow.DataPipeline;
+import dev.simplified.dataflow.DataTypes;
+import dev.simplified.dataflow.stage.filter.dom.DomTextContainsFilter;
+import dev.simplified.dataflow.stage.source.LiteralSource;
+import dev.simplified.dataflow.stage.terminal.collect.FirstCollect;
+import dev.simplified.dataflow.stage.transform.dom.CssSelectTransform;
+import dev.simplified.dataflow.stage.transform.dom.DomNthChildTransform;
+import dev.simplified.dataflow.stage.transform.dom.DomTextTransform;
+import dev.simplified.dataflow.stage.transform.dom.ParseHtmlTransform;
+import dev.simplified.dataflow.stage.transform.primitive.ParseIntTransform;
+import dev.simplified.dataflow.stage.transform.string.RegexExtractTransform;
 import dev.simplified.discordapi.response.page.Page;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,8 +37,8 @@ class PipelineBuilderPageTest {
             .stage(CssSelectTransform.of("table.infobox tr"))
             .stage(DomTextContainsFilter.of("Dmg"))
             .stage(FirstCollect.of(DataTypes.DOM_NODE))
-            .stage(NthChildTransform.of("td", 1))
-            .stage(NodeTextTransform.of())
+            .stage(DomNthChildTransform.of("td", 1))
+            .stage(DomTextTransform.of())
             .stage(RegexExtractTransform.of("\\d+"))
             .stage(ParseIntTransform.of())
             .build();

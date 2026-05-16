@@ -1,7 +1,7 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.stage.Stage;
-import dev.sbs.dataflow.stage.meta.StageSpec;
+import dev.simplified.dataflow.stage.Stage;
+import dev.simplified.dataflow.stage.meta.StageSpec;
 import dev.simplified.discordapi.component.TextDisplay;
 import dev.simplified.discordapi.component.interaction.Button;
 import dev.simplified.discordapi.component.layout.Section;

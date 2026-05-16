@@ -1,6 +1,6 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.DataPipeline;
+import dev.simplified.dataflow.DataPipeline;
 import dev.simplified.discordapi.feature.extractor.Extractor;
 import lombok.Builder;
 import lombok.Getter;

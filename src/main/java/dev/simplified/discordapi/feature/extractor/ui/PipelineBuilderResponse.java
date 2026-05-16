@@ -1,12 +1,12 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.PipelineContext;
-import dev.sbs.dataflow.stage.Stage;
-import dev.sbs.dataflow.stage.StageRegistry;
-import dev.sbs.dataflow.stage.meta.StageReflection;
-import dev.sbs.dataflow.stage.meta.StageSpec;
-import dev.sbs.dataflow.stage.source.EmbedSource;
-import dev.sbs.dataflow.stage.terminal.collect.MapCollect;
+import dev.simplified.dataflow.PipelineContext;
+import dev.simplified.dataflow.stage.Stage;
+import dev.simplified.dataflow.stage.StageRegistry;
+import dev.simplified.dataflow.stage.meta.StageReflection;
+import dev.simplified.dataflow.stage.meta.StageSpec;
+import dev.simplified.dataflow.stage.source.EmbedSource;
+import dev.simplified.dataflow.stage.terminal.collect.MapCollect;
 import dev.simplified.discordapi.DiscordBot;
 import dev.simplified.discordapi.component.interaction.Button;
 import dev.simplified.discordapi.component.interaction.SelectMenu;

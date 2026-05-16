@@ -1,6 +1,6 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.stage.meta.StageSpec;
+import dev.simplified.dataflow.stage.meta.StageSpec;
 import dev.simplified.discordapi.component.interaction.SelectMenu;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

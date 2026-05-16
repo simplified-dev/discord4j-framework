@@ -1,8 +1,8 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.DataPipeline;
-import dev.sbs.dataflow.ValidationReport;
-import dev.sbs.dataflow.stage.Stage;
+import dev.simplified.dataflow.DataPipeline;
+import dev.simplified.dataflow.ValidationReport;
+import dev.simplified.dataflow.stage.Stage;
 import dev.simplified.discordapi.component.TextDisplay;
 import dev.simplified.discordapi.component.interaction.Button;
 import dev.simplified.discordapi.component.layout.ActionRow;

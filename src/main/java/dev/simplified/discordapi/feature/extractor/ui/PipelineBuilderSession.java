@@ -1,14 +1,16 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.DataPipeline;
-import dev.sbs.dataflow.DataType;
-import dev.sbs.dataflow.PipelineContext;
-import dev.sbs.dataflow.ValidationReport;
-import dev.sbs.dataflow.chain.Chain;
-import dev.sbs.dataflow.stage.SourceStage;
-import dev.sbs.dataflow.stage.Stage;
-import dev.sbs.dataflow.stage.source.EmbedSource;
-import dev.sbs.dataflow.stage.terminal.collect.MapCollect;
+import dev.simplified.dataflow.DataPipeline;
+import dev.simplified.dataflow.DataType;
+import dev.simplified.dataflow.PipelineContext;
+import dev.simplified.dataflow.ValidationReport;
+import dev.simplified.dataflow.chain.Chain;
+import dev.simplified.dataflow.chain.NamedChains;
+import dev.simplified.dataflow.stage.FieldSpec;
+import dev.simplified.dataflow.stage.SourceStage;
+import dev.simplified.dataflow.stage.Stage;
+import dev.simplified.dataflow.stage.source.EmbedSource;
+import dev.simplified.dataflow.stage.terminal.collect.MapCollect;
 import dev.simplified.discordapi.feature.extractor.Extractor;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -76,7 +78,7 @@ public final class PipelineBuilderSession {
      * pipeline is unchanged.
      *
      * @param stageClass the stage implementation class being added
-     * @param values the submitted modal values keyed by {@link dev.sbs.dataflow.stage.FieldSpec#name() field name}
+     * @param values the submitted modal values keyed by {@link FieldSpec#name() field name}
      * @return the new state after the mutation attempt
      */
     public @NotNull PipelineBuilderState appendStage(@NotNull Class<? extends Stage> stageClass, @NotNull Map<String, String> values) {
@@ -329,7 +331,7 @@ public final class PipelineBuilderSession {
         if (inner.stages().isEmpty())
             return banner("Cannot embed an empty extractor");
         @SuppressWarnings("unchecked")
-        DataType<Object> outputType = (DataType<Object>) inner.stages().get(inner.stages().size() - 1).outputType();
+        DataType<Object> outputType = (DataType<Object>) inner.stages().getLast().outputType();
         Stage<?, ?> embed = EmbedSource.of(extractor.getId().toString(), outputType);
         return this.stateRef.updateAndGet(s -> {
             try {
@@ -482,7 +484,7 @@ public final class PipelineBuilderSession {
         });
     }
 
-    private static @NotNull LinkedHashMap<String, List<Stage<?, ?>>> copyOutputs(@NotNull dev.sbs.dataflow.chain.NamedChains outputs) {
+    private static @NotNull LinkedHashMap<String, List<Stage<?, ?>>> copyOutputs(@NotNull NamedChains outputs) {
         LinkedHashMap<String, List<Stage<?, ?>>> copy = new LinkedHashMap<>();
         for (Map.Entry<String, Chain> entry : outputs.chains().entrySet())
             copy.put(entry.getKey(), new java.util.ArrayList<>(entry.getValue().stages()));
@@ -501,8 +503,6 @@ public final class PipelineBuilderSession {
         return b.build();
     }
 
-
-    @SuppressWarnings("unchecked")
     private static @NotNull DataPipeline rebuildAppending(@NotNull DataPipeline current, @NotNull Stage<?, ?> appended) {
         DataPipeline.Builder b = DataPipeline.builder();
         boolean first = true;
@@ -528,7 +528,6 @@ public final class PipelineBuilderSession {
         return b.build();
     }
 
-    @SuppressWarnings("unchecked")
     private static @NotNull DataPipeline rebuildOmitting(@NotNull DataPipeline current, int index) {
         DataPipeline.Builder b = DataPipeline.builder();
         boolean first = true;

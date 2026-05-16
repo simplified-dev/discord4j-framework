@@ -1,8 +1,8 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.stage.Stage;
-import dev.sbs.dataflow.stage.StageRegistry;
-import dev.sbs.dataflow.stage.meta.StageSpec;
+import dev.simplified.dataflow.stage.Stage;
+import dev.simplified.dataflow.stage.StageRegistry;
+import dev.simplified.dataflow.stage.meta.StageSpec;
 import dev.simplified.discordapi.component.interaction.SelectMenu;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
@@ -101,7 +101,7 @@ public final class StageAddSelectMenu {
         String[] parts = category.name().toLowerCase().split("_");
         StringBuilder out = new StringBuilder();
         for (String part : parts) {
-            if (out.length() > 0) out.append(' ');
+            if (!out.isEmpty()) out.append(' ');
             out.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
         }
         return out.toString();

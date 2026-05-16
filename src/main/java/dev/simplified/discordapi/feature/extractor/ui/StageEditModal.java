@@ -1,11 +1,11 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.DataType;
-import dev.sbs.dataflow.stage.FieldSpec;
-import dev.sbs.dataflow.stage.Stage;
-import dev.sbs.dataflow.stage.StageConfig;
-import dev.sbs.dataflow.stage.meta.StageReflection;
-import dev.sbs.dataflow.stage.meta.StageSpec;
+import dev.simplified.dataflow.DataType;
+import dev.simplified.dataflow.stage.FieldSpec;
+import dev.simplified.dataflow.stage.Stage;
+import dev.simplified.dataflow.stage.StageConfig;
+import dev.simplified.dataflow.stage.meta.StageReflection;
+import dev.simplified.dataflow.stage.meta.StageSpec;
 import dev.simplified.discordapi.component.interaction.Modal;
 import dev.simplified.discordapi.component.interaction.TextInput;
 import dev.simplified.discordapi.component.layout.Label;
