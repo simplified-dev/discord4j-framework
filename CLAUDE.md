@@ -175,7 +175,7 @@ event/lifecycle/          — ClientCreatedBotEvent, GatewayConnectBotEvent,
 
 **`handler/PersistentComponentHandler`** — routing registry for persistent component interactions:
 - Scanned at bot startup over loaded `DiscordCommand` instances and `PersistentComponentListener` subclasses.
-- `@Component(customId)`-annotated methods (in `dev.sbs.discordapi.listener.Component`) register a route from custom id → `MethodHandle`. Methods take a `ComponentContext` subtype and return a `Publisher<Void>`.
+- `@Component(customId)`-annotated methods (in `listener.dev.simplified.discordapi.Component`) register a route from custom id → `MethodHandle`. Methods take a `ComponentContext` subtype and return a `Publisher<Void>`.
 - `@PersistentResponse([id])`-annotated methods (in `dev.sbs.discordapi.response.PersistentResponse`) register a route from `(ownerClass, builderId)` → `MethodHandle`. Methods take an `EventContext<?>` and return a `Response`. Invoked at both creation time (with the dispatching command's context) and hydration time (with a `HydrationContext`).
 - `HydrationContext` (`context/HydrationContext`) is a lightweight `EventContext<ComponentInteractionEvent>` that intentionally does NOT extend `MessageContext`, so builder methods cannot accidentally call `getResponse()` against a not-yet-existing cache entry.
 
