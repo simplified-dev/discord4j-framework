@@ -2,8 +2,13 @@ package dev.sbs.discordapi.feature.extractor.ui;
 
 import dev.sbs.dataflow.DataPipeline;
 import dev.sbs.dataflow.PipelineContext;
-import dev.sbs.dataflow.stage.StageKind;
-import dev.sbs.dataflow.stage.source.PasteSource;
+import dev.sbs.dataflow.stage.filter.numeric.IntGreaterThanFilter;
+import dev.sbs.dataflow.stage.source.EmbedSource;
+import dev.sbs.dataflow.stage.source.LiteralSource;
+import dev.sbs.dataflow.stage.source.UrlSource;
+import dev.sbs.dataflow.stage.terminal.collect.MapCollect;
+import dev.sbs.dataflow.stage.transform.dom.DomOuterHtmlTransform;
+import dev.sbs.dataflow.stage.transform.dom.NodeTextTransform;
 import dev.sbs.dataflow.stage.transform.dom.ParseHtmlTransform;
 import dev.sbs.discordapi.feature.extractor.Extractor;
 import org.junit.jupiter.api.DisplayName;
@@ -32,8 +37,8 @@ class PipelineBuilderSessionTest {
     @DisplayName("appendStage adds a source on an empty pipeline")
     void appendSource() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_PASTE, Map.of(
-            "body", "<html/>",
+        session.appendStage(LiteralSource.class, Map.of(
+            "value", "<html/>",
             "outputType", "RAW_HTML"
         ));
         assertThat(session.state().pipeline().stages().size(), is(equalTo(1)));
@@ -44,9 +49,9 @@ class PipelineBuilderSessionTest {
     @DisplayName("appendStage chains multiple stages")
     void appendChain() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_PASTE, Map.of("body", "<p>x</p>", "outputType", "RAW_HTML"));
-        session.appendStage(StageKind.PARSE_HTML, Map.of());
-        session.appendStage(StageKind.TRANSFORM_NODE_TEXT, Map.of());
+        session.appendStage(LiteralSource.class, Map.of("value", "<p>x</p>", "outputType", "RAW_HTML"));
+        session.appendStage(ParseHtmlTransform.class, Map.of());
+        session.appendStage(NodeTextTransform.class, Map.of());
         assertThat(session.state().pipeline().stages().size(), is(equalTo(3)));
     }
 
@@ -54,10 +59,10 @@ class PipelineBuilderSessionTest {
     @DisplayName("appendStage with bad input sets banner without mutating the pipeline")
     void appendStageBadInput() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_URL, Map.of("url", "x", "outputType", "RAW_HTML"));
+        session.appendStage(UrlSource.class, Map.of("url", "x", "outputType", "RAW_HTML"));
         int sizeBefore = session.state().pipeline().stages().size();
         // INT field with non-numeric input
-        session.appendStage(StageKind.FILTER_INT_GREATER_THAN, Map.of("threshold", "abc"));
+        session.appendStage(IntGreaterThanFilter.class, Map.of("threshold", "abc"));
         assertThat(session.state().pipeline().stages().size(), is(equalTo(sizeBefore)));
         assertThat(session.state().banner(), containsString("Invalid number"));
     }
@@ -66,17 +71,17 @@ class PipelineBuilderSessionTest {
     @DisplayName("replaceStage swaps the stage at the given index")
     void replaceStage() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_PASTE, Map.of("body", "<p>x</p>", "outputType", "RAW_HTML"));
-        session.appendStage(StageKind.PARSE_HTML, Map.of());
-        session.replaceStage(1, StageKind.PARSE_HTML, Map.of());
-        assertThat(session.state().pipeline().stages().get(1).kind(), is(equalTo(StageKind.PARSE_HTML)));
+        session.appendStage(LiteralSource.class, Map.of("value", "<p>x</p>", "outputType", "RAW_HTML"));
+        session.appendStage(ParseHtmlTransform.class, Map.of());
+        session.replaceStage(1, ParseHtmlTransform.class, Map.of());
+        assertThat(session.state().pipeline().stages().get(1).kindId(), is(equalTo("PARSE_HTML")));
     }
 
     @Test
     @DisplayName("replaceStage at out-of-range index sets banner")
     void replaceOutOfRange() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.replaceStage(99, StageKind.PARSE_HTML, Map.of());
+        session.replaceStage(99, ParseHtmlTransform.class, Map.of());
         assertThat(session.state().banner(), containsString("No such stage"));
     }
 
@@ -84,8 +89,8 @@ class PipelineBuilderSessionTest {
     @DisplayName("removeStage trims the pipeline")
     void removeStage() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_PASTE, Map.of("body", "<p>x</p>", "outputType", "RAW_HTML"));
-        session.appendStage(StageKind.PARSE_HTML, Map.of());
+        session.appendStage(LiteralSource.class, Map.of("value", "<p>x</p>", "outputType", "RAW_HTML"));
+        session.appendStage(ParseHtmlTransform.class, Map.of());
         session.removeStage(1);
         assertThat(session.state().pipeline().stages().size(), is(equalTo(1)));
     }
@@ -95,7 +100,7 @@ class PipelineBuilderSessionTest {
     void reset() {
         PipelineBuilderSession session = PipelineBuilderSession.resume(PipelineBuilderState.builder()
             .pipeline(DataPipeline.builder()
-                .source(PasteSource.html("<p/>"))
+                .source(LiteralSource.rawHtml("<p/>"))
                 .stage(ParseHtmlTransform.of())
                 .build())
             .label("wiki dmg")
@@ -121,10 +126,10 @@ class PipelineBuilderSessionTest {
     @DisplayName("Mutating the pipeline clears the latestResult")
     void mutationClearsResult() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_PASTE, Map.of("body", "<p/>", "outputType", "RAW_HTML"));
+        session.appendStage(LiteralSource.class, Map.of("value", "<p/>", "outputType", "RAW_HTML"));
         session.recordRunResult(42);
         assertThat(session.state().latestResult(), is(notNullValue()));
-        session.appendStage(StageKind.PARSE_HTML, Map.of());
+        session.appendStage(ParseHtmlTransform.class, Map.of());
         assertThat(session.state().latestResult(), is(nullValue()));
     }
 
@@ -132,10 +137,10 @@ class PipelineBuilderSessionTest {
     @DisplayName("runPipeline on a valid pipeline records the result")
     void runValidPipeline() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_PASTE, Map.of("body", "<p>hello</p>", "outputType", "RAW_HTML"));
-        session.appendStage(StageKind.PARSE_HTML, Map.of());
-        session.appendStage(StageKind.TRANSFORM_NODE_TEXT, Map.of());
-        session.runPipeline(PipelineContext.empty());
+        session.appendStage(LiteralSource.class, Map.of("value", "<p>hello</p>", "outputType", "RAW_HTML"));
+        session.appendStage(ParseHtmlTransform.class, Map.of());
+        session.appendStage(NodeTextTransform.class, Map.of());
+        session.runPipeline(PipelineContext.defaults());
         assertThat(session.state().latestResult(), is(equalTo("hello")));
         assertThat(session.state().banner(), is(nullValue()));
     }
@@ -145,7 +150,7 @@ class PipelineBuilderSessionTest {
     void runInvalidPipeline() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
         // No source -> validation rejects
-        session.runPipeline(PipelineContext.empty());
+        session.runPipeline(PipelineContext.defaults());
         assertThat(session.state().banner(), containsString("validation"));
         assertThat(session.state().latestResult(), is(nullValue()));
     }
@@ -154,9 +159,9 @@ class PipelineBuilderSessionTest {
     @DisplayName("validateSaveInputs accepts a complete, well-formed submission")
     void validSave() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_PASTE, Map.of("body", "<p>x</p>", "outputType", "RAW_HTML"));
-        session.appendStage(StageKind.PARSE_HTML, Map.of());
-        session.appendStage(StageKind.TRANSFORM_NODE_TEXT, Map.of());
+        session.appendStage(LiteralSource.class, Map.of("value", "<p>x</p>", "outputType", "RAW_HTML"));
+        session.appendStage(ParseHtmlTransform.class, Map.of());
+        session.appendStage(NodeTextTransform.class, Map.of());
         PipelineBuilderSession.SaveValidation v = session.validateSaveInputs(Map.of(
             SaveExtractorModal.FIELD_LABEL, "Wiki Damage",
             SaveExtractorModal.FIELD_SHORT_ID, "wiki_dmg",
@@ -185,7 +190,7 @@ class PipelineBuilderSessionTest {
     @DisplayName("validateSaveInputs lowercases shortId and uppercases visibility")
     void normalisesCase() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_PASTE, Map.of("body", "<p/>", "outputType", "RAW_HTML"));
+        session.appendStage(LiteralSource.class, Map.of("value", "<p/>", "outputType", "RAW_HTML"));
         PipelineBuilderSession.SaveValidation v = session.validateSaveInputs(Map.of(
             SaveExtractorModal.FIELD_LABEL, "X",
             SaveExtractorModal.FIELD_SHORT_ID, "Wiki_Dmg",
@@ -200,7 +205,7 @@ class PipelineBuilderSessionTest {
     @DisplayName("validateSaveInputs rejects shortId with disallowed characters")
     void shortIdRegex() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_PASTE, Map.of("body", "<p/>", "outputType", "RAW_HTML"));
+        session.appendStage(LiteralSource.class, Map.of("value", "<p/>", "outputType", "RAW_HTML"));
         PipelineBuilderSession.SaveValidation v = session.validateSaveInputs(Map.of(
             SaveExtractorModal.FIELD_LABEL, "x",
             SaveExtractorModal.FIELD_SHORT_ID, "Wiki Dmg!",
@@ -214,7 +219,7 @@ class PipelineBuilderSessionTest {
     @DisplayName("validateSaveInputs rejects unknown visibility values")
     void unknownVisibility() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_PASTE, Map.of("body", "<p/>", "outputType", "RAW_HTML"));
+        session.appendStage(LiteralSource.class, Map.of("value", "<p/>", "outputType", "RAW_HTML"));
         PipelineBuilderSession.SaveValidation v = session.validateSaveInputs(Map.of(
             SaveExtractorModal.FIELD_LABEL, "x",
             SaveExtractorModal.FIELD_SHORT_ID, "x",
@@ -227,24 +232,12 @@ class PipelineBuilderSessionTest {
     /* ============================  branch sub-chain  ============================ */
 
     private static PipelineBuilderSession sessionWithBranch() {
-        PipelineBuilderSession session = PipelineBuilderSession.startNew();
-        session.appendStage(StageKind.SOURCE_PASTE, Map.of("body", "<p/>", "outputType", "RAW_HTML"));
-        session.appendStage(StageKind.PARSE_HTML, Map.of());
-        session.appendStage(StageKind.BRANCH, Map.of("inputType", "DOM_NODE", "outputs", "{}"));
-        // The BRANCH config above won't parse (SUB_PIPELINES_MAP can't come from a string), so
-        // build it directly via the dataflow API instead.
-        return rebuildWithBranchAt(session, 2);
-    }
-
-    private static PipelineBuilderSession rebuildWithBranchAt(PipelineBuilderSession base, int idx) {
-        // Replace the failed BRANCH attempt at idx with a real (empty) Branch via direct rebuild.
-        // The session's append rejected the bad input; the prior pipeline still has 2 stages
-        // (SOURCE_PASTE, PARSE_HTML). Build a fresh session with the branch wired manually.
-        dev.sbs.dataflow.stage.branch.Branch<?> branch = dev.sbs.dataflow.stage.branch.Branch
-            .over(dev.sbs.dataflow.DataTypes.DOM_NODE)
-            .build();
+        // Build a session whose pipeline ends in a real (empty) MapCollect (the new home of
+        // the old Branch concept). MapCollect cannot be constructed via the modal cascade
+        // because its NamedChains config is sub-pipeline-only, so we drop one in directly.
+        MapCollect<?> branch = MapCollect.over(dev.sbs.dataflow.DataTypes.DOM_NODE).build();
         DataPipeline p = DataPipeline.builder()
-            .source(PasteSource.html("<p/>"))
+            .source(LiteralSource.rawHtml("<p/>"))
             .stage(ParseHtmlTransform.of())
             .stage(branch)
             .build();
@@ -257,10 +250,9 @@ class PipelineBuilderSessionTest {
     void addBranchOutputAdds() {
         PipelineBuilderSession session = sessionWithBranch();
         session.addBranchOutput(2, "dmg");
-        dev.sbs.dataflow.stage.branch.Branch<?> branch =
-            (dev.sbs.dataflow.stage.branch.Branch<?>) session.state().pipeline().stages().get(2);
-        assertThat(branch.outputs().keySet(), org.hamcrest.Matchers.contains("dmg"));
-        assertThat(branch.outputs().get("dmg").size(), is(equalTo(0)));
+        MapCollect<?> branch = (MapCollect<?>) session.state().pipeline().stages().get(2);
+        assertThat(branch.outputs().chains().keySet(), org.hamcrest.Matchers.contains("dmg"));
+        assertThat(branch.outputs().chains().get("dmg").size(), is(equalTo(0)));
     }
 
     @Test
@@ -277,11 +269,10 @@ class PipelineBuilderSessionTest {
     void appendIntoSubChain() {
         PipelineBuilderSession session = sessionWithBranch();
         session.addBranchOutput(2, "dmg");
-        session.appendBranchStage(2, "dmg", StageKind.TRANSFORM_NODE_TEXT, Map.of());
-        dev.sbs.dataflow.stage.branch.Branch<?> branch =
-            (dev.sbs.dataflow.stage.branch.Branch<?>) session.state().pipeline().stages().get(2);
-        assertThat(branch.outputs().get("dmg").size(), is(equalTo(1)));
-        assertThat(branch.outputs().get("dmg").get(0).kind(), is(equalTo(StageKind.TRANSFORM_NODE_TEXT)));
+        session.appendBranchStage(2, "dmg", NodeTextTransform.class, Map.of());
+        MapCollect<?> branch = (MapCollect<?>) session.state().pipeline().stages().get(2);
+        assertThat(branch.outputs().chains().get("dmg").size(), is(equalTo(1)));
+        assertThat(branch.outputs().chains().get("dmg").stages().get(0).kindId(), is(equalTo("TRANSFORM_NODE_TEXT")));
     }
 
     @Test
@@ -289,11 +280,10 @@ class PipelineBuilderSessionTest {
     void rejectsNestedBranch() {
         PipelineBuilderSession session = sessionWithBranch();
         session.addBranchOutput(2, "dmg");
-        session.appendBranchStage(2, "dmg", StageKind.BRANCH, Map.of());
+        session.appendBranchStage(2, "dmg", MapCollect.class, Map.of());
         assertThat(session.state().banner(), containsString("cannot be nested"));
-        dev.sbs.dataflow.stage.branch.Branch<?> branch =
-            (dev.sbs.dataflow.stage.branch.Branch<?>) session.state().pipeline().stages().get(2);
-        assertThat(branch.outputs().get("dmg").isEmpty(), is(true));
+        MapCollect<?> branch = (MapCollect<?>) session.state().pipeline().stages().get(2);
+        assertThat(branch.outputs().chains().get("dmg").isEmpty(), is(true));
     }
 
     @Test
@@ -301,11 +291,10 @@ class PipelineBuilderSessionTest {
     void replaceInSubChain() {
         PipelineBuilderSession session = sessionWithBranch();
         session.addBranchOutput(2, "dmg");
-        session.appendBranchStage(2, "dmg", StageKind.TRANSFORM_NODE_TEXT, Map.of());
-        session.replaceBranchStage(2, "dmg", 0, StageKind.TRANSFORM_DOM_OUTER_HTML, Map.of());
-        dev.sbs.dataflow.stage.branch.Branch<?> branch =
-            (dev.sbs.dataflow.stage.branch.Branch<?>) session.state().pipeline().stages().get(2);
-        assertThat(branch.outputs().get("dmg").get(0).kind(), is(equalTo(StageKind.TRANSFORM_DOM_OUTER_HTML)));
+        session.appendBranchStage(2, "dmg", NodeTextTransform.class, Map.of());
+        session.replaceBranchStage(2, "dmg", 0, DomOuterHtmlTransform.class, Map.of());
+        MapCollect<?> branch = (MapCollect<?>) session.state().pipeline().stages().get(2);
+        assertThat(branch.outputs().chains().get("dmg").stages().get(0).kindId(), is(equalTo("TRANSFORM_DOM_OUTER_HTML")));
     }
 
     @Test
@@ -313,11 +302,10 @@ class PipelineBuilderSessionTest {
     void removeFromSubChain() {
         PipelineBuilderSession session = sessionWithBranch();
         session.addBranchOutput(2, "dmg");
-        session.appendBranchStage(2, "dmg", StageKind.TRANSFORM_NODE_TEXT, Map.of());
+        session.appendBranchStage(2, "dmg", NodeTextTransform.class, Map.of());
         session.removeBranchStage(2, "dmg", 0);
-        dev.sbs.dataflow.stage.branch.Branch<?> branch =
-            (dev.sbs.dataflow.stage.branch.Branch<?>) session.state().pipeline().stages().get(2);
-        assertThat(branch.outputs().get("dmg").isEmpty(), is(true));
+        MapCollect<?> branch = (MapCollect<?>) session.state().pipeline().stages().get(2);
+        assertThat(branch.outputs().chains().get("dmg").isEmpty(), is(true));
     }
 
     @Test
@@ -326,9 +314,8 @@ class PipelineBuilderSessionTest {
         PipelineBuilderSession session = sessionWithBranch();
         session.addBranchOutput(2, "dmg");
         session.removeBranchOutput(2, "dmg");
-        dev.sbs.dataflow.stage.branch.Branch<?> branch =
-            (dev.sbs.dataflow.stage.branch.Branch<?>) session.state().pipeline().stages().get(2);
-        assertThat(branch.outputs().keySet().isEmpty(), is(true));
+        MapCollect<?> branch = (MapCollect<?>) session.state().pipeline().stages().get(2);
+        assertThat(branch.outputs().chains().keySet().isEmpty(), is(true));
     }
 
     @Test
@@ -342,7 +329,7 @@ class PipelineBuilderSessionTest {
     /* ============================  pipeline embed  ============================ */
 
     @Test
-    @DisplayName("appendEmbedStage appends a PIPELINE_EMBED carrying the extractor's UUID")
+    @DisplayName("appendEmbedStage appends an EmbedSource carrying the extractor's UUID")
     void appendEmbed() {
         PipelineBuilderSession session = PipelineBuilderSession.startNew();
         Extractor saved = new Extractor();
@@ -350,13 +337,13 @@ class PipelineBuilderSessionTest {
         saved.setLabel("inner");
         saved.setShortId("inner");
         saved.setPipeline(DataPipeline.builder()
-            .source(PasteSource.json("42"))
+            .source(LiteralSource.rawJson("42"))
             .stage(dev.sbs.dataflow.stage.transform.json.ParseJsonTransform.of())
             .stage(dev.sbs.dataflow.stage.transform.json.JsonAsIntTransform.of())
             .build());
         session.appendEmbedStage(saved);
         assertThat(session.state().pipeline().stages().size(), is(equalTo(1)));
-        assertThat(session.state().pipeline().stages().get(0).kind(), is(equalTo(StageKind.PIPELINE_EMBED)));
+        assertThat(session.state().pipeline().stages().get(0), is(org.hamcrest.Matchers.instanceOf(EmbedSource.class)));
     }
 
     @Test

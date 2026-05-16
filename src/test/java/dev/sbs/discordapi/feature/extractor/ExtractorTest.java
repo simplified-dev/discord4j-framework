@@ -2,7 +2,7 @@ package dev.sbs.discordapi.feature.extractor;
 
 import dev.sbs.dataflow.DataPipeline;
 import dev.sbs.dataflow.PipelineContext;
-import dev.sbs.dataflow.stage.source.PasteSource;
+import dev.sbs.dataflow.stage.source.LiteralSource;
 import dev.sbs.dataflow.stage.transform.json.JsonAsIntTransform;
 import dev.sbs.dataflow.stage.transform.json.ParseJsonTransform;
 import org.junit.jupiter.api.DisplayName;
@@ -49,7 +49,7 @@ class ExtractorTest {
     @DisplayName("pipeline()/setPipeline() round-trip the dataflow definition")
     void pipelineRoundTrip() {
         DataPipeline original = DataPipeline.builder()
-            .source(PasteSource.json("42"))
+            .source(LiteralSource.rawJson("42"))
             .stage(ParseJsonTransform.of())
             .stage(JsonAsIntTransform.of())
             .build();
@@ -57,7 +57,7 @@ class ExtractorTest {
         Extractor row = new Extractor();
         row.setPipeline(original);
 
-        Integer result = row.pipeline().execute(PipelineContext.empty());
+        Integer result = row.pipeline().execute(PipelineContext.defaults());
         assertThat(result, is(equalTo(42)));
     }
 

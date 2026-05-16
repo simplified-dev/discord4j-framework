@@ -4,10 +4,11 @@ import dev.sbs.dataflow.DataPipeline;
 import dev.sbs.dataflow.DataType;
 import dev.sbs.dataflow.PipelineContext;
 import dev.sbs.dataflow.ValidationReport;
+import dev.sbs.dataflow.chain.Chain;
+import dev.sbs.dataflow.stage.SourceStage;
 import dev.sbs.dataflow.stage.Stage;
-import dev.sbs.dataflow.stage.StageKind;
-import dev.sbs.dataflow.stage.branch.Branch;
-import dev.sbs.dataflow.stage.embed.PipelineEmbed;
+import dev.sbs.dataflow.stage.source.EmbedSource;
+import dev.sbs.dataflow.stage.terminal.collect.MapCollect;
 import dev.sbs.discordapi.feature.extractor.Extractor;
 import dev.simplified.collection.ConcurrentList;
 import lombok.AccessLevel;
@@ -72,21 +73,28 @@ public final class PipelineBuilderSession {
 
     /**
      * Appends a stage to the end of the pipeline by parsing modal submission values for
-     * {@code kind}. On parse error the state's banner is set and the pipeline is unchanged.
+     * {@code stageClass}. On parse error or invalid chain the state's banner is set and the
+     * pipeline is unchanged.
      *
-     * @param kind the kind being added
+     * @param stageClass the stage implementation class being added
      * @param values the submitted modal values keyed by {@link dev.sbs.dataflow.stage.FieldSpec#name() field name}
      * @return the new state after the mutation attempt
      */
-    public @NotNull PipelineBuilderState appendStage(@NotNull StageKind kind, @NotNull Map<String, String> values) {
-        StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(kind, values);
+    public @NotNull PipelineBuilderState appendStage(@NotNull Class<? extends Stage> stageClass, @NotNull Map<String, String> values) {
+        StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(stageClass, values);
         if (!result.ok())
             return this.stateRef.updateAndGet(s -> s.toBuilder().banner(result.error()).build());
-        return this.stateRef.updateAndGet(s -> s.toBuilder()
-            .pipeline(rebuildAppending(s.pipeline(), result.stage()))
-            .banner(null)
-            .latestResult(null)
-            .build());
+        return this.stateRef.updateAndGet(s -> {
+            try {
+                return s.toBuilder()
+                    .pipeline(rebuildAppending(s.pipeline(), result.stage()))
+                    .banner(null)
+                    .latestResult(null)
+                    .build();
+            } catch (RuntimeException ex) {
+                return s.toBuilder().banner("Cannot append stage: " + ex.getMessage()).build();
+            }
+        });
     }
 
     /**
@@ -94,23 +102,27 @@ public final class PipelineBuilderSession {
      * the state's banner is set and the pipeline is unchanged.
      *
      * @param index zero-based stage index to replace
-     * @param kind the kind being edited
+     * @param stageClass the stage implementation class
      * @param values the submitted modal values
      * @return the new state after the mutation attempt
      */
-    public @NotNull PipelineBuilderState replaceStage(int index, @NotNull StageKind kind, @NotNull Map<String, String> values) {
-        StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(kind, values);
+    public @NotNull PipelineBuilderState replaceStage(int index, @NotNull Class<? extends Stage> stageClass, @NotNull Map<String, String> values) {
+        StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(stageClass, values);
         if (!result.ok())
             return this.stateRef.updateAndGet(s -> s.toBuilder().banner(result.error()).build());
         return this.stateRef.updateAndGet(s -> {
             DataPipeline current = s.pipeline();
             if (index < 0 || index >= current.stages().size())
                 return s.toBuilder().banner("No such stage #" + index).build();
-            return s.toBuilder()
-                .pipeline(rebuildReplacing(current, index, result.stage()))
-                .banner(null)
-                .latestResult(null)
-                .build();
+            try {
+                return s.toBuilder()
+                    .pipeline(rebuildReplacing(current, index, result.stage()))
+                    .banner(null)
+                    .latestResult(null)
+                    .build();
+            } catch (RuntimeException ex) {
+                return s.toBuilder().banner("Cannot replace stage: " + ex.getMessage()).build();
+            }
         });
     }
 
@@ -125,11 +137,15 @@ public final class PipelineBuilderSession {
             DataPipeline current = s.pipeline();
             if (index < 0 || index >= current.stages().size())
                 return s.toBuilder().banner("No such stage #" + index).build();
-            return s.toBuilder()
-                .pipeline(rebuildOmitting(current, index))
-                .banner(null)
-                .latestResult(null)
-                .build();
+            try {
+                return s.toBuilder()
+                    .pipeline(rebuildOmitting(current, index))
+                    .banner(null)
+                    .latestResult(null)
+                    .build();
+            } catch (RuntimeException ex) {
+                return s.toBuilder().banner("Cannot remove stage: " + ex.getMessage()).build();
+            }
         });
     }
 
@@ -296,7 +312,7 @@ public final class PipelineBuilderSession {
     }
 
     /**
-     * Appends a {@link PipelineEmbed} stage referencing the saved {@code extractor}. The
+     * Appends an {@link EmbedSource} stage referencing the saved {@code extractor}. The
      * embedded id is the extractor's {@link Extractor#getId() UUID}; the embed's declared
      * output type is read from the extractor's terminal stage. Validation issues in the
      * stored pipeline are surfaced to the banner without mutating the outer pipeline.
@@ -315,26 +331,32 @@ public final class PipelineBuilderSession {
             return banner("Cannot embed an empty extractor");
         @SuppressWarnings("unchecked")
         DataType<Object> outputType = (DataType<Object>) inner.stages().get(inner.stages().size() - 1).outputType();
-        Stage<?, ?> embed = PipelineEmbed.of(extractor.getId().toString(), outputType);
-        return this.stateRef.updateAndGet(s -> s.toBuilder()
-            .pipeline(rebuildAppending(s.pipeline(), embed))
-            .banner(null)
-            .latestResult(null)
-            .build());
+        Stage<?, ?> embed = EmbedSource.of(extractor.getId().toString(), outputType);
+        return this.stateRef.updateAndGet(s -> {
+            try {
+                return s.toBuilder()
+                    .pipeline(rebuildAppending(s.pipeline(), embed))
+                    .banner(null)
+                    .latestResult(null)
+                    .build();
+            } catch (RuntimeException ex) {
+                return s.toBuilder().banner("Cannot append embed: " + ex.getMessage()).build();
+            }
+        });
     }
 
     /* ====================  branch sub-chain mutation  ==================== */
 
     /**
-     * Adds an empty named output to the {@link Branch} stage at {@code branchIndex}.
+     * Adds an empty named output to the {@link MapCollect} stage at {@code branchIndex}.
      *
-     * @param branchIndex top-level pipeline index of the {@code Branch} stage
+     * @param branchIndex top-level pipeline index of the {@code MapCollect} stage
      * @param outputName the new output name (must not already exist)
      * @return the new state after the mutation attempt
      */
     public @NotNull PipelineBuilderState addBranchOutput(int branchIndex, @NotNull String outputName) {
         return mutateBranch(branchIndex, branch -> {
-            if (branch.outputs().containsKey(outputName))
+            if (branch.outputs().chains().containsKey(outputName))
                 return new BranchMutation(null, "Output '" + outputName + "' already exists");
             LinkedHashMap<String, List<Stage<?, ?>>> next = copyOutputs(branch.outputs());
             next.put(outputName, new java.util.ArrayList<>());
@@ -343,15 +365,15 @@ public final class PipelineBuilderSession {
     }
 
     /**
-     * Removes a named output from the {@link Branch} stage at {@code branchIndex}.
+     * Removes a named output from the {@link MapCollect} stage at {@code branchIndex}.
      *
-     * @param branchIndex top-level pipeline index of the {@code Branch} stage
+     * @param branchIndex top-level pipeline index of the {@code MapCollect} stage
      * @param outputName the output to remove
      * @return the new state after the mutation attempt
      */
     public @NotNull PipelineBuilderState removeBranchOutput(int branchIndex, @NotNull String outputName) {
         return mutateBranch(branchIndex, branch -> {
-            if (!branch.outputs().containsKey(outputName))
+            if (!branch.outputs().chains().containsKey(outputName))
                 return new BranchMutation(null, "No such output '" + outputName + "'");
             LinkedHashMap<String, List<Stage<?, ?>>> next = copyOutputs(branch.outputs());
             next.remove(outputName);
@@ -360,22 +382,22 @@ public final class PipelineBuilderSession {
     }
 
     /**
-     * Appends a stage to the named sub-chain of a {@link Branch} stage. Enforces the v1
-     * depth-1 cap by rejecting nested {@link StageKind#BRANCH} stages.
+     * Appends a stage to the named sub-chain of a {@link MapCollect} stage. Enforces the v1
+     * depth-1 cap by rejecting nested {@link MapCollect} stages.
      *
-     * @param branchIndex top-level pipeline index of the {@code Branch} stage
+     * @param branchIndex top-level pipeline index of the {@code MapCollect} stage
      * @param outputName the named sub-chain to append into
-     * @param kind the kind being added
+     * @param stageClass the stage implementation class being added
      * @param values the submitted modal values
      * @return the new state after the mutation attempt
      */
-    public @NotNull PipelineBuilderState appendBranchStage(int branchIndex, @NotNull String outputName, @NotNull StageKind kind, @NotNull Map<String, String> values) {
-        if (kind == StageKind.BRANCH)
+    public @NotNull PipelineBuilderState appendBranchStage(int branchIndex, @NotNull String outputName, @NotNull Class<? extends Stage> stageClass, @NotNull Map<String, String> values) {
+        if (stageClass.equals(MapCollect.class))
             return banner("Branch stages cannot be nested inside another branch");
-        StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(kind, values);
+        StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(stageClass, values);
         if (!result.ok()) return banner(result.error());
         return mutateBranch(branchIndex, branch -> {
-            if (!branch.outputs().containsKey(outputName))
+            if (!branch.outputs().chains().containsKey(outputName))
                 return new BranchMutation(null, "No such output '" + outputName + "'");
             LinkedHashMap<String, List<Stage<?, ?>>> next = copyOutputs(branch.outputs());
             next.get(outputName).add(result.stage());
@@ -386,22 +408,22 @@ public final class PipelineBuilderSession {
     /**
      * Replaces a stage at {@code stageIndex} inside a named sub-chain.
      *
-     * @param branchIndex top-level pipeline index of the {@code Branch} stage
+     * @param branchIndex top-level pipeline index of the {@code MapCollect} stage
      * @param outputName the named sub-chain
      * @param stageIndex zero-based index of the stage within the sub-chain
-     * @param kind the new kind
+     * @param stageClass the new stage implementation class
      * @param values the submitted modal values
      * @return the new state after the mutation attempt
      */
-    public @NotNull PipelineBuilderState replaceBranchStage(int branchIndex, @NotNull String outputName, int stageIndex, @NotNull StageKind kind, @NotNull Map<String, String> values) {
-        if (kind == StageKind.BRANCH)
+    public @NotNull PipelineBuilderState replaceBranchStage(int branchIndex, @NotNull String outputName, int stageIndex, @NotNull Class<? extends Stage> stageClass, @NotNull Map<String, String> values) {
+        if (stageClass.equals(MapCollect.class))
             return banner("Branch stages cannot be nested inside another branch");
-        StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(kind, values);
+        StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(stageClass, values);
         if (!result.ok()) return banner(result.error());
         return mutateBranch(branchIndex, branch -> {
-            if (!branch.outputs().containsKey(outputName))
+            if (!branch.outputs().chains().containsKey(outputName))
                 return new BranchMutation(null, "No such output '" + outputName + "'");
-            List<Stage<?, ?>> chain = new java.util.ArrayList<>(branch.outputs().get(outputName));
+            List<Stage<?, ?>> chain = new java.util.ArrayList<>(branch.outputs().chains().get(outputName).stages());
             if (stageIndex < 0 || stageIndex >= chain.size())
                 return new BranchMutation(null, "No such stage #" + stageIndex + " in '" + outputName + "'");
             chain.set(stageIndex, result.stage());
@@ -414,16 +436,16 @@ public final class PipelineBuilderSession {
     /**
      * Removes a stage at {@code stageIndex} from a named sub-chain.
      *
-     * @param branchIndex top-level pipeline index of the {@code Branch} stage
+     * @param branchIndex top-level pipeline index of the {@code MapCollect} stage
      * @param outputName the named sub-chain
      * @param stageIndex zero-based index of the stage within the sub-chain
      * @return the new state after the mutation attempt
      */
     public @NotNull PipelineBuilderState removeBranchStage(int branchIndex, @NotNull String outputName, int stageIndex) {
         return mutateBranch(branchIndex, branch -> {
-            if (!branch.outputs().containsKey(outputName))
+            if (!branch.outputs().chains().containsKey(outputName))
                 return new BranchMutation(null, "No such output '" + outputName + "'");
-            List<Stage<?, ?>> chain = new java.util.ArrayList<>(branch.outputs().get(outputName));
+            List<Stage<?, ?>> chain = new java.util.ArrayList<>(branch.outputs().chains().get(outputName).stages());
             if (stageIndex < 0 || stageIndex >= chain.size())
                 return new BranchMutation(null, "No such stage #" + stageIndex + " in '" + outputName + "'");
             chain.remove(stageIndex);
@@ -435,38 +457,42 @@ public final class PipelineBuilderSession {
 
     /* ====================  internals  ==================== */
 
-    /** Result of an attempted branch mutation: either the new {@link Branch} or an error. */
-    private record BranchMutation(@Nullable Branch<?> branch, @Nullable String error) {}
+    /** Result of an attempted branch mutation: either the new {@link MapCollect} or an error. */
+    private record BranchMutation(@Nullable MapCollect<?> branch, @Nullable String error) {}
 
-    private @NotNull PipelineBuilderState mutateBranch(int branchIndex, @NotNull java.util.function.Function<Branch<?>, BranchMutation> mutator) {
+    private @NotNull PipelineBuilderState mutateBranch(int branchIndex, @NotNull java.util.function.Function<MapCollect<?>, BranchMutation> mutator) {
         return this.stateRef.updateAndGet(s -> {
             DataPipeline current = s.pipeline();
             if (branchIndex < 0 || branchIndex >= current.stages().size())
                 return s.toBuilder().banner("No such stage #" + branchIndex).build();
             Stage<?, ?> stage = current.stages().get(branchIndex);
-            if (!(stage instanceof Branch<?> branch))
+            if (!(stage instanceof MapCollect<?> branch))
                 return s.toBuilder().banner("Stage #" + branchIndex + " is not a Branch").build();
             BranchMutation result = mutator.apply(branch);
             if (result.error() != null)
                 return s.toBuilder().banner(result.error()).build();
-            return s.toBuilder()
-                .pipeline(rebuildReplacing(current, branchIndex, result.branch()))
-                .banner(null)
-                .latestResult(null)
-                .build();
+            try {
+                return s.toBuilder()
+                    .pipeline(rebuildReplacing(current, branchIndex, result.branch()))
+                    .banner(null)
+                    .latestResult(null)
+                    .build();
+            } catch (RuntimeException ex) {
+                return s.toBuilder().banner("Cannot mutate branch: " + ex.getMessage()).build();
+            }
         });
     }
 
-    private static @NotNull LinkedHashMap<String, List<Stage<?, ?>>> copyOutputs(@NotNull Map<String, ConcurrentList<Stage<?, ?>>> outputs) {
+    private static @NotNull LinkedHashMap<String, List<Stage<?, ?>>> copyOutputs(@NotNull dev.sbs.dataflow.chain.NamedChains outputs) {
         LinkedHashMap<String, List<Stage<?, ?>>> copy = new LinkedHashMap<>();
-        for (Map.Entry<String, ConcurrentList<Stage<?, ?>>> entry : outputs.entrySet())
-            copy.put(entry.getKey(), new java.util.ArrayList<>(entry.getValue()));
+        for (Map.Entry<String, Chain> entry : outputs.chains().entrySet())
+            copy.put(entry.getKey(), new java.util.ArrayList<>(entry.getValue().stages()));
         return copy;
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
-    private static @NotNull Branch<?> rebuildBranch(@NotNull DataType<?> inputType, @NotNull LinkedHashMap<String, List<Stage<?, ?>>> outputs) {
-        Branch.Builder<?> b = Branch.over((DataType) inputType);
+    private static @NotNull MapCollect<?> rebuildBranch(@NotNull DataType<?> inputType, @NotNull LinkedHashMap<String, List<Stage<?, ?>>> outputs) {
+        MapCollect.Builder<?> b = MapCollect.over((DataType) inputType);
         for (Map.Entry<String, List<Stage<?, ?>>> entry : outputs.entrySet()) {
             List<Stage<?, ?>> stages = entry.getValue();
             b.output(entry.getKey(), chain -> {
@@ -483,11 +509,11 @@ public final class PipelineBuilderSession {
         boolean first = true;
         for (Stage<?, ?> s : current.stages()) {
             if (first) {
-                b.source((Stage<Void, ?>) s);
+                b.source((SourceStage<?>) s);
                 first = false;
             } else b.stage(s);
         }
-        if (first) b.source((Stage<Void, ?>) appended);
+        if (first) b.source((SourceStage<?>) appended);
         else b.stage(appended);
         return b.build();
     }
@@ -497,7 +523,7 @@ public final class PipelineBuilderSession {
         DataPipeline.Builder b = DataPipeline.builder();
         for (int i = 0; i < current.stages().size(); i++) {
             Stage<?, ?> s = i == index ? replacement : current.stages().get(i);
-            if (i == 0) b.source((Stage<Void, ?>) s);
+            if (i == 0) b.source((SourceStage<?>) s);
             else b.stage(s);
         }
         return b.build();
@@ -511,7 +537,7 @@ public final class PipelineBuilderSession {
             if (i == index) continue;
             Stage<?, ?> s = current.stages().get(i);
             if (first) {
-                b.source((Stage<Void, ?>) s);
+                b.source((SourceStage<?>) s);
                 first = false;
             } else b.stage(s);
         }

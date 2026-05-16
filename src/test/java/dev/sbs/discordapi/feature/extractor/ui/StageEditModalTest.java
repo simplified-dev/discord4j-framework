@@ -2,7 +2,10 @@ package dev.sbs.discordapi.feature.extractor.ui;
 
 import dev.sbs.dataflow.DataTypes;
 import dev.sbs.dataflow.stage.StageConfig;
-import dev.sbs.dataflow.stage.StageKind;
+import dev.sbs.dataflow.stage.source.LiteralSource;
+import dev.sbs.dataflow.stage.terminal.collect.ListCollect;
+import dev.sbs.dataflow.stage.transform.dom.ParseHtmlTransform;
+import dev.sbs.dataflow.stage.transform.string.RegexExtractTransform;
 import dev.sbs.discordapi.component.interaction.Modal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,7 +20,7 @@ class StageEditModalTest {
     @Test
     @DisplayName("forAdd builds a modal whose id encodes the kind")
     void forAddKindEncoded() {
-        Modal modal = StageEditModal.forAdd(StageKind.TRANSFORM_REGEX_EXTRACT);
+        Modal modal = StageEditModal.forAdd(RegexExtractTransform.class);
         assertThat(modal.getIdentifier(), is(equalTo(StageEditModal.ID_ADD_PREFIX + "TRANSFORM_REGEX_EXTRACT")));
         assertThat(modal.getTitle().orElse(""), containsString("Regex extract"));
     }
@@ -29,7 +32,7 @@ class StageEditModalTest {
             .string("regex", "\\d+")
             .integer("group", 0)
             .build();
-        Modal modal = StageEditModal.forEdit(3, StageKind.TRANSFORM_REGEX_EXTRACT, cfg);
+        Modal modal = StageEditModal.forEdit(3, RegexExtractTransform.class, cfg);
         assertThat(modal.getIdentifier(), is(equalTo(StageEditModal.ID_EDIT_PREFIX + "3")));
         assertThat(modal.getTitle().orElse(""), containsString("#3"));
     }
@@ -37,15 +40,15 @@ class StageEditModalTest {
     @Test
     @DisplayName("Modal contains one component per non-sub-pipeline schema slot")
     void modalComponentsMatchSchema() {
-        Modal modal = StageEditModal.forAdd(StageKind.SOURCE_URL);
-        // SOURCE_URL has two slots: url + outputType
+        Modal modal = StageEditModal.forAdd(LiteralSource.class);
+        // LiteralSource has two slots: outputType + value
         assertThat(modal.getComponents().size(), is(equalTo(2)));
     }
 
     @Test
     @DisplayName("Schema with zero slots produces an empty modal body")
     void zeroSlotKind() {
-        Modal modal = StageEditModal.forAdd(StageKind.PARSE_HTML);
+        Modal modal = StageEditModal.forAdd(ParseHtmlTransform.class);
         assertThat(modal.getComponents().size(), is(equalTo(0)));
     }
 
@@ -55,7 +58,7 @@ class StageEditModalTest {
         StageConfig cfg = StageConfig.builder()
             .dataType("elementType", DataTypes.STRING)
             .build();
-        Modal modal = StageEditModal.forEdit(0, StageKind.COLLECT_LIST, cfg);
+        Modal modal = StageEditModal.forEdit(0, ListCollect.class, cfg);
         assertThat(modal.getComponents().size(), is(equalTo(1)));
     }
 

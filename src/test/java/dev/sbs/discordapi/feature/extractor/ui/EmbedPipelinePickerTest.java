@@ -1,7 +1,7 @@
 package dev.sbs.discordapi.feature.extractor.ui;
 
 import dev.sbs.dataflow.DataPipeline;
-import dev.sbs.dataflow.stage.source.PasteSource;
+import dev.sbs.dataflow.stage.source.LiteralSource;
 import dev.sbs.dataflow.stage.transform.json.JsonAsIntTransform;
 import dev.sbs.dataflow.stage.transform.json.ParseJsonTransform;
 import dev.sbs.discordapi.component.interaction.SelectMenu;
@@ -58,7 +58,7 @@ class EmbedPipelinePickerTest {
         row.setLabel(label);
         row.setVisibility(Extractor.Visibility.PRIVATE);
         row.setPipeline(DataPipeline.builder()
-            .source(PasteSource.json("0"))
+            .source(LiteralSource.rawJson("0"))
             .stage(ParseJsonTransform.of())
             .stage(JsonAsIntTransform.of())
             .build());

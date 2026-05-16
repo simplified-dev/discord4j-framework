@@ -80,7 +80,7 @@ public class ExtractCommand extends DiscordCommand<SlashCommandContext> {
 
         return ExtractorRunner.run(store, shortId, callerUserId, callerGuildId,
                 extractor -> PipelineContext.builder()
-                    .withResolver(ExtractorResolver.of(store, PipelineContext.empty()))
+                    .withResolver(ExtractorResolver.of(store, PipelineContext.defaults()))
                     .withBagEntry(ExtractorResolver.BAG_CALLER_USER_ID, callerUserId)
                     .withBagEntry(ExtractorResolver.BAG_CALLER_GUILD_ID,
                         callerGuildId == null ? -1L : callerGuildId)

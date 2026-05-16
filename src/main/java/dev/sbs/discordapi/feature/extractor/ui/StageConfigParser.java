@@ -3,10 +3,9 @@ package dev.sbs.discordapi.feature.extractor.ui;
 import dev.sbs.dataflow.DataType;
 import dev.sbs.dataflow.DataTypes;
 import dev.sbs.dataflow.stage.FieldSpec;
-import dev.sbs.dataflow.stage.FieldType;
 import dev.sbs.dataflow.stage.Stage;
 import dev.sbs.dataflow.stage.StageConfig;
-import dev.sbs.dataflow.stage.StageKind;
+import dev.sbs.dataflow.stage.meta.StageReflection;
 import dev.sbs.discordapi.component.interaction.Modal;
 import dev.sbs.discordapi.component.interaction.TextInput;
 import dev.sbs.discordapi.component.layout.Label;
@@ -17,18 +16,19 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Function;
 
 /**
  * Bridge from a submitted {@link Modal} to a populated {@link StageConfig} ready for
- * {@link StageKind#factory()}.
+ * {@link StageReflection#of(Class)}'s {@code fromConfig}.
  * <p>
- * Field text values are converted according to each {@link FieldSpec#type() FieldType};
+ * Field text values are converted according to each {@link FieldSpec#type() FieldSpec.Type};
  * unparseable values fail fast with a {@link Result#error()} string suitable for surfacing in
  * the builder's banner.
  * <p>
- * {@link FieldType#SUB_PIPELINES_MAP} fields are skipped here - branch sub-pipelines are
- * authored in a dedicated drill-down flow (step 2.7) and merged into the config separately.
+ * Sub-pipeline fields ({@link FieldSpec.Type#SUB_PIPELINE} /
+ * {@link FieldSpec.Type#SUB_PIPELINES_MAP} / {@link FieldSpec.Type#TYPED_SUB_PIPELINES_MAP})
+ * are skipped here - branch sub-pipelines are authored in a dedicated drill-down flow
+ * (step 2.7) and merged into the config separately.
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class StageConfigParser {
@@ -66,22 +66,26 @@ public final class StageConfigParser {
     }
 
     /**
-     * Attempts to build a {@link Stage} for {@code kind} from {@code values}, returning either
-     * the constructed stage or an error message.
+     * Attempts to build a {@link StageConfig} for {@code stageClass} from {@code values},
+     * returning either the populated config or an error message.
      *
-     * @param kind the stage kind being configured
+     * @param stageClass the stage implementation class being configured
      * @param values the submitted text values keyed by {@link FieldSpec#name()}
      * @return the parse result
      */
-    public static @NotNull Result parse(@NotNull StageKind kind, @NotNull Map<String, String> values) {
-        if (kind.factory() == null)
-            return new Result(null, "Stage kind '" + kind.name() + "' is not currently supported");
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public static @NotNull Result parse(@NotNull Class<? extends Stage> stageClass, @NotNull Map<String, String> values) {
+        Class<? extends Stage<?, ?>> typed = (Class<? extends Stage<?, ?>>) stageClass;
+        return parseTyped(typed, values);
+    }
+
+    private static @NotNull Result parseTyped(@NotNull Class<? extends Stage<?, ?>> stageClass, @NotNull Map<String, String> values) {
         StageConfig.Builder b = StageConfig.builder();
-        for (FieldSpec spec : kind.schema()) {
-            if (spec.type() == FieldType.SUB_PIPELINES_MAP) continue;
+        for (FieldSpec<?> spec : StageReflection.of(stageClass).schema()) {
+            if (isSubPipeline(spec.type())) continue;
             String raw = values.get(spec.name());
             if (raw == null || raw.isEmpty()) {
-                if (spec.type() == FieldType.STRING) {
+                if (spec.type() == FieldSpec.Type.STRING) {
                     b.string(spec.name(), "");
                     continue;
                 }
@@ -98,7 +102,13 @@ public final class StageConfigParser {
         return new Result(b.build(), null);
     }
 
-    private static void applyValue(@NotNull StageConfig.Builder b, @NotNull FieldSpec spec, @NotNull String raw) {
+    private static boolean isSubPipeline(@NotNull FieldSpec.Type type) {
+        return type == FieldSpec.Type.SUB_PIPELINE
+            || type == FieldSpec.Type.SUB_PIPELINES_MAP
+            || type == FieldSpec.Type.TYPED_SUB_PIPELINES_MAP;
+    }
+
+    private static void applyValue(@NotNull StageConfig.Builder b, @NotNull FieldSpec<?> spec, @NotNull String raw) {
         switch (spec.type()) {
             case STRING -> b.string(spec.name(), raw);
             case INT -> b.integer(spec.name(), Integer.parseInt(raw.trim()));
@@ -106,7 +116,7 @@ public final class StageConfigParser {
             case DOUBLE -> b.doubleVal(spec.name(), Double.parseDouble(raw.trim()));
             case BOOLEAN -> b.bool(spec.name(), parseBoolean(raw));
             case DATA_TYPE -> b.dataType(spec.name(), requireType(raw.trim()));
-            case SUB_PIPELINES_MAP -> { /* handled outside */ }
+            case SUB_PIPELINE, SUB_PIPELINES_MAP, TYPED_SUB_PIPELINES_MAP -> { /* handled outside */ }
         }
     }
 
@@ -126,21 +136,24 @@ public final class StageConfigParser {
     }
 
     /**
-     * Convenience: parse and apply {@link StageKind#factory()} in one call.
+     * Convenience: parse and invoke {@link StageReflection#of(Class)}'s {@code fromConfig} in
+     * one call.
      *
-     * @param kind the stage kind
+     * @param stageClass the stage implementation class
      * @param values the submitted text values
      * @return success carrying the new stage, or failure with a banner-ready message
      */
-    public static @NotNull StageResult parseAndBuild(@NotNull StageKind kind, @NotNull Map<String, String> values) {
-        Result parsed = parse(kind, values);
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    public static @NotNull StageResult parseAndBuild(@NotNull Class<? extends Stage> stageClass, @NotNull Map<String, String> values) {
+        Class<? extends Stage<?, ?>> typed = (Class<? extends Stage<?, ?>>) stageClass;
+        Result parsed = parseTyped(typed, values);
         if (!parsed.ok()) return new StageResult(null, parsed.error());
-        Function<StageConfig, Stage<?, ?>> factory = kind.factory();
         try {
-            Stage<?, ?> stage = factory.apply(parsed.config());
+            Stage<?, ?> stage = StageReflection.of(typed).fromConfig(parsed.config());
             return new StageResult(stage, null);
         } catch (RuntimeException ex) {
-            return new StageResult(null, "Failed to build stage: " + ex.getMessage());
+            Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+            return new StageResult(null, "Failed to build stage: " + cause.getMessage());
         }
     }
 

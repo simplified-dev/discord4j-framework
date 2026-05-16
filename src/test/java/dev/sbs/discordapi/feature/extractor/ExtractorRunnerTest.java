@@ -2,7 +2,7 @@ package dev.sbs.discordapi.feature.extractor;
 
 import dev.sbs.dataflow.DataPipeline;
 import dev.sbs.dataflow.PipelineContext;
-import dev.sbs.dataflow.stage.source.PasteSource;
+import dev.sbs.dataflow.stage.source.LiteralSource;
 import dev.sbs.dataflow.stage.transform.dom.NodeTextTransform;
 import dev.sbs.dataflow.stage.transform.dom.ParseHtmlTransform;
 import dev.sbs.dataflow.stage.transform.json.JsonAsIntTransform;
@@ -28,14 +28,14 @@ class ExtractorRunnerTest {
         row.setLabel("Damage");
         row.setVisibility(Extractor.Visibility.PRIVATE);
         row.setPipeline(DataPipeline.builder()
-            .source(PasteSource.json("42"))
+            .source(LiteralSource.rawJson("42"))
             .stage(ParseJsonTransform.of())
             .stage(JsonAsIntTransform.of())
             .build());
         store.save(row).block();
 
         ExtractorRunner.Result result = ExtractorRunner.run(
-            store, "dmg", 100L, null, e -> PipelineContext.empty()
+            store, "dmg", 100L, null, e -> PipelineContext.defaults()
         ).block();
         assertThat(result.ok(), is(true));
         assertThat(result.value(), is(equalTo(42)));
@@ -47,7 +47,7 @@ class ExtractorRunnerTest {
     void runNotFound() {
         InMemoryExtractorStore store = InMemoryExtractorStore.of();
         ExtractorRunner.Result result = ExtractorRunner.run(
-            store, "missing", 100L, null, e -> PipelineContext.empty()
+            store, "missing", 100L, null, e -> PipelineContext.defaults()
         ).block();
         assertThat(result.ok(), is(false));
         assertThat(result.error(), containsString("No extractor named"));
@@ -61,12 +61,12 @@ class ExtractorRunnerTest {
         row.setOwnerUserId(100L);
         row.setShortId("dmg");
         row.setVisibility(Extractor.Visibility.PRIVATE);
-        row.setPipeline(DataPipeline.builder().source(PasteSource.text("x")).build());
+        row.setPipeline(DataPipeline.builder().source(LiteralSource.text("x")).build());
         store.save(row).block();
 
-        ExtractorRunner.Result mine = ExtractorRunner.run(store, "dmg", 100L, null, e -> PipelineContext.empty()).block();
+        ExtractorRunner.Result mine = ExtractorRunner.run(store, "dmg", 100L, null, e -> PipelineContext.defaults()).block();
         assertThat(mine.ok(), is(true));
-        ExtractorRunner.Result theirs = ExtractorRunner.run(store, "dmg", 200L, null, e -> PipelineContext.empty()).block();
+        ExtractorRunner.Result theirs = ExtractorRunner.run(store, "dmg", 200L, null, e -> PipelineContext.defaults()).block();
         assertThat(theirs.ok(), is(false));
     }
 
@@ -83,7 +83,7 @@ class ExtractorRunnerTest {
         store.save(row).block();
 
         ExtractorRunner.Result result = ExtractorRunner.run(
-            store, "broken", 100L, null, e -> PipelineContext.empty()
+            store, "broken", 100L, null, e -> PipelineContext.defaults()
         ).block();
         assertThat(result.ok(), is(false));
         assertThat(result.error(), is(notNullValue()));
@@ -108,7 +108,7 @@ class ExtractorRunnerTest {
         row.setLabel("HTML");
         row.setVisibility(Extractor.Visibility.PRIVATE);
         row.setPipeline(DataPipeline.builder()
-            .source(PasteSource.html("<p>hi</p>"))
+            .source(LiteralSource.rawHtml("<p>hi</p>"))
             .stage(ParseHtmlTransform.of())
             .stage(NodeTextTransform.of())
             .build());
@@ -117,7 +117,7 @@ class ExtractorRunnerTest {
         java.util.concurrent.atomic.AtomicReference<Extractor> seen = new java.util.concurrent.atomic.AtomicReference<>();
         ExtractorRunner.run(store, "html", 100L, null, e -> {
             seen.set(e);
-            return PipelineContext.empty();
+            return PipelineContext.defaults();
         }).block();
         assertThat(seen.get(), is(notNullValue()));
         assertThat(seen.get().getShortId(), is(equalTo("html")));

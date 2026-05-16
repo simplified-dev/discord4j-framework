@@ -1,6 +1,9 @@
 package dev.sbs.discordapi.feature.extractor.ui;
 
-import dev.sbs.dataflow.stage.StageKind;
+import dev.sbs.dataflow.stage.filter.numeric.IntGreaterThanFilter;
+import dev.sbs.dataflow.stage.filter.string.StringContainsFilter;
+import dev.sbs.dataflow.stage.terminal.collect.ListCollect;
+import dev.sbs.dataflow.stage.transform.dom.ParseHtmlTransform;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +21,7 @@ class StageConfigParserTest {
     @DisplayName("STRING field roundtrips")
     void stringField() {
         StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(
-            StageKind.FILTER_STRING_CONTAINS,
+            StringContainsFilter.class,
             Map.of("needle", "Dmg")
         );
         assertThat(result.ok(), is(true));
@@ -29,7 +32,7 @@ class StageConfigParserTest {
     @DisplayName("INT field parses decimal text")
     void intField() {
         StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(
-            StageKind.FILTER_INT_GREATER_THAN,
+            IntGreaterThanFilter.class,
             Map.of("threshold", "42")
         );
         assertThat(result.ok(), is(true));
@@ -39,7 +42,7 @@ class StageConfigParserTest {
     @DisplayName("Bad number text yields a banner-friendly error")
     void badNumber() {
         StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(
-            StageKind.FILTER_INT_GREATER_THAN,
+            IntGreaterThanFilter.class,
             Map.of("threshold", "forty-two")
         );
         assertThat(result.ok(), is(false));
@@ -50,13 +53,13 @@ class StageConfigParserTest {
     @DisplayName("DATA_TYPE field accepts known labels and rejects unknown")
     void dataTypeField() {
         StageConfigParser.StageResult ok = StageConfigParser.parseAndBuild(
-            StageKind.COLLECT_LIST,
+            ListCollect.class,
             Map.of("elementType", "STRING")
         );
         assertThat(ok.ok(), is(true));
 
         StageConfigParser.StageResult bad = StageConfigParser.parseAndBuild(
-            StageKind.COLLECT_LIST,
+            ListCollect.class,
             Map.of("elementType", "NOT_A_TYPE")
         );
         assertThat(bad.ok(), is(false));
@@ -67,7 +70,7 @@ class StageConfigParserTest {
     @DisplayName("Zero-arg stage parses with empty values")
     void zeroArgStage() {
         StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(
-            StageKind.PARSE_HTML,
+            ParseHtmlTransform.class,
             Map.of()
         );
         assertThat(result.ok(), is(true));
@@ -78,7 +81,7 @@ class StageConfigParserTest {
     @DisplayName("Missing required field surfaces the field's label")
     void missingField() {
         StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(
-            StageKind.FILTER_INT_GREATER_THAN,
+            IntGreaterThanFilter.class,
             Map.of()
         );
         assertThat(result.ok(), is(false));
@@ -87,22 +90,11 @@ class StageConfigParserTest {
     }
 
     @Test
-    @DisplayName("Unsupported kind (TRANSFORM_MAP - no factory) is rejected")
-    void unsupportedKind() {
-        StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(
-            StageKind.TRANSFORM_MAP,
-            Map.of()
-        );
-        assertThat(result.ok(), is(false));
-        assertThat(result.error(), containsString("not currently supported"));
-    }
-
-    @Test
     @DisplayName("Boolean accepts yes/no/1/0 variants")
     void booleanVariants() {
         // No first-class BOOLEAN field stage in v1, but the parse path is used by tests
         // covering the modal flow. Smoke-test via StageConfig directly:
-        StageConfigParser.Result yes = StageConfigParser.parse(StageKind.PARSE_HTML, Map.of());
+        StageConfigParser.Result yes = StageConfigParser.parse(ParseHtmlTransform.class, Map.of());
         assertThat(yes.ok(), is(true));
     }
 

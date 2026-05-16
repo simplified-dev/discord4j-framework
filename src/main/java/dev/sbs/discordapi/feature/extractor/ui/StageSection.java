@@ -1,6 +1,7 @@
 package dev.sbs.discordapi.feature.extractor.ui;
 
 import dev.sbs.dataflow.stage.Stage;
+import dev.sbs.dataflow.stage.meta.StageSpec;
 import dev.sbs.discordapi.component.TextDisplay;
 import dev.sbs.discordapi.component.interaction.Button;
 import dev.sbs.discordapi.component.layout.Section;
@@ -55,26 +56,39 @@ public final class StageSection {
     }
 
     private static @NotNull String icon(@NotNull Stage<?, ?> stage) {
-        return switch (stage.kind()) {
-            case SOURCE_URL, SOURCE_PASTE -> ":globe_with_meridians:";
-            case PARSE_HTML, PARSE_XML, PARSE_JSON -> ":scroll:";
-            case BRANCH -> ":fork_and_knife:";
-            case PIPELINE_EMBED -> ":link:";
-            case COLLECT_FIRST, COLLECT_LAST, COLLECT_LIST, COLLECT_SET, COLLECT_JOIN -> ":inbox_tray:";
-            default -> stage.kind().name().startsWith("FILTER_") ? ":mag:" : ":gear:";
+        String id = stage.kindId();
+        return switch (id) {
+            case "SOURCE_URL", "SOURCE_LITERAL", "SOURCE_LITERAL_LIST" -> ":globe_with_meridians:";
+            case "PARSE_HTML", "PARSE_XML", "PARSE_JSON" -> ":scroll:";
+            case "COLLECT_MAP" -> ":fork_and_knife:";
+            case "SOURCE_EMBED" -> ":link:";
+            default -> {
+                StageSpec spec = stage.getClass().getAnnotation(StageSpec.class);
+                if (spec != null) {
+                    yield switch (spec.category()) {
+                        case TERMINAL_AVERAGE, TERMINAL_COLLECT, TERMINAL_MATCH, TERMINAL_MINMAX, TERMINAL_SUM -> ":inbox_tray:";
+                        case FILTER_DOM, FILTER_JSON, FILTER_LIST, FILTER_NUMERIC, FILTER_STRING,
+                             PREDICATE_COMMON, PREDICATE_DOM, PREDICATE_JSON, PREDICATE_NUMERIC, PREDICATE_STRING
+                            -> ":mag:";
+                        default -> ":gear:";
+                    };
+                }
+                yield ":gear:";
+            }
         };
     }
 
     private static @NotNull String categoryName(@NotNull Stage<?, ?> stage) {
-        String name = stage.kind().name();
-        if (name.startsWith("SOURCE_")) return "Source";
-        if (name.startsWith("PARSE_")) return "Parse";
-        if (name.startsWith("FILTER_")) return "Filter";
-        if (name.startsWith("TRANSFORM_")) return "Transform";
-        if (name.startsWith("COLLECT_")) return "Collect";
-        if ("BRANCH".equals(name)) return "Branch";
-        if ("PIPELINE_EMBED".equals(name)) return "Embed";
-        return name;
+        StageSpec spec = stage.getClass().getAnnotation(StageSpec.class);
+        if (spec == null) return stage.kindId();
+        return switch (spec.category()) {
+            case SOURCE -> "Source";
+            case FILTER_DOM, FILTER_JSON, FILTER_LIST, FILTER_NUMERIC, FILTER_STRING -> "Filter";
+            case PREDICATE_COMMON, PREDICATE_DOM, PREDICATE_JSON, PREDICATE_NUMERIC, PREDICATE_STRING -> "Predicate";
+            case TRANSFORM_DOM, TRANSFORM_ENCODING, TRANSFORM_JSON, TRANSFORM_LIST,
+                 TRANSFORM_PRIMITIVE, TRANSFORM_STRING -> "Transform";
+            case TERMINAL_AVERAGE, TERMINAL_COLLECT, TERMINAL_MATCH, TERMINAL_MINMAX, TERMINAL_SUM -> "Collect";
+        };
     }
 
 }

@@ -2,8 +2,11 @@ package dev.sbs.discordapi.feature.extractor.ui;
 
 import dev.sbs.dataflow.PipelineContext;
 import dev.sbs.dataflow.stage.Stage;
-import dev.sbs.dataflow.stage.StageCategory;
-import dev.sbs.dataflow.stage.StageKind;
+import dev.sbs.dataflow.stage.StageRegistry;
+import dev.sbs.dataflow.stage.meta.StageReflection;
+import dev.sbs.dataflow.stage.meta.StageSpec;
+import dev.sbs.dataflow.stage.source.EmbedSource;
+import dev.sbs.dataflow.stage.terminal.collect.MapCollect;
 import dev.sbs.discordapi.DiscordBot;
 import dev.sbs.discordapi.component.interaction.Button;
 import dev.sbs.discordapi.component.interaction.SelectMenu;
@@ -128,7 +131,7 @@ public final class PipelineBuilderResponse {
             cancelRow());
     }
 
-    private @NotNull Page renderKindPickerPage(@NotNull StageCategory category) {
+    private @NotNull Page renderKindPickerPage(@NotNull StageSpec.Category category) {
         SelectMenu.StringMenu base = StageAddSelectMenu.kindsIn(category);
         SelectMenu.StringMenu menu = SelectMenu.StringMenu.from(base)
             .withOptions(base.getOptions().stream()
@@ -182,19 +185,19 @@ public final class PipelineBuilderResponse {
     /* ============================  add-stage cascade  ============================ */
 
     private @NotNull Mono<Void> onCategorySelected(@NotNull OptionContext ctx) {
-        StageCategory category = StageCategory.valueOf(ctx.getOption().getValue());
+        StageSpec.Category category = StageSpec.Category.valueOf(ctx.getOption().getValue());
         return ctx.edit(response -> response.mutate().withPages(renderKindPickerPage(category)).build());
     }
 
     private @NotNull Mono<Void> onKindSelected(@NotNull OptionContext ctx) {
-        StageKind kind = StageKind.valueOf(ctx.getOption().getValue());
-        if (kind == StageKind.PIPELINE_EMBED) return presentEmbedPicker(ctx);
-        if (!kind.requiresModal()) {
-            this.session.appendStage(kind, java.util.Map.of());
+        Class<? extends Stage<?, ?>> stageClass = StageRegistry.byId(ctx.getOption().getValue());
+        if (stageClass.equals(EmbedSource.class)) return presentEmbedPicker(ctx);
+        if (!requiresModal(stageClass)) {
+            this.session.appendStage(stageClass, java.util.Map.of());
             return rerender(ctx);
         }
-        return ctx.presentModal(StageEditModal.forAdd(kind).mutate()
-            .onInteract(modalCtx -> onAddModalSubmitted(modalCtx, kind))
+        return ctx.presentModal(StageEditModal.forAdd(stageClass).mutate()
+            .onInteract(modalCtx -> onAddModalSubmitted(modalCtx, stageClass))
             .build());
     }
 
@@ -219,8 +222,8 @@ public final class PipelineBuilderResponse {
             .then(rerender(ctx));
     }
 
-    private @NotNull Mono<Void> onAddModalSubmitted(@NotNull ModalContext ctx, @NotNull StageKind kind) {
-        this.session.appendStage(kind, StageConfigParser.readValues(ctx.getComponent()));
+    private @NotNull Mono<Void> onAddModalSubmitted(@NotNull ModalContext ctx, @NotNull Class<? extends Stage<?, ?>> stageClass) {
+        this.session.appendStage(stageClass, StageConfigParser.readValues(ctx.getComponent()));
         return rerender(ctx);
     }
 
@@ -233,27 +236,35 @@ public final class PipelineBuilderResponse {
             return rerender(ctx);
         }
         Stage<?, ?> stage = stages.get(stageIndex);
-        StageKind kind = stage.kind();
-        if (kind == StageKind.PIPELINE_EMBED) {
+        @SuppressWarnings("unchecked")
+        Class<? extends Stage<?, ?>> stageClass = (Class<? extends Stage<?, ?>>) stage.getClass();
+        if (stageClass.equals(EmbedSource.class)) {
             this.session.banner("Embedded pipelines cannot be edited; remove and re-add");
             return rerender(ctx);
         }
-        if (kind == StageKind.BRANCH) {
+        if (stageClass.equals(MapCollect.class)) {
             this.session.banner("Branch sub-chain editing is not yet supported in this UI");
             return rerender(ctx);
         }
-        if (!kind.requiresModal()) {
+        if (!requiresModal(stageClass)) {
             this.session.banner("Stage has no editable fields");
             return rerender(ctx);
         }
-        return ctx.presentModal(StageEditModal.forEdit(stageIndex, kind, stage.config()).mutate()
-            .onInteract(modalCtx -> onEditModalSubmitted(modalCtx, stageIndex, kind))
+        return ctx.presentModal(StageEditModal.forEdit(stageIndex, stageClass, stage.config()).mutate()
+            .onInteract(modalCtx -> onEditModalSubmitted(modalCtx, stageIndex, stageClass))
             .build());
     }
 
-    private @NotNull Mono<Void> onEditModalSubmitted(@NotNull ModalContext ctx, int stageIndex, @NotNull StageKind kind) {
-        this.session.replaceStage(stageIndex, kind, StageConfigParser.readValues(ctx.getComponent()));
+    private @NotNull Mono<Void> onEditModalSubmitted(@NotNull ModalContext ctx, int stageIndex, @NotNull Class<? extends Stage<?, ?>> stageClass) {
+        this.session.replaceStage(stageIndex, stageClass, StageConfigParser.readValues(ctx.getComponent()));
         return rerender(ctx);
+    }
+
+    private static boolean requiresModal(@NotNull Class<? extends Stage<?, ?>> stageClass) {
+        return StageReflection.of(stageClass).schema().stream().anyMatch(spec -> switch (spec.type()) {
+            case SUB_PIPELINE, SUB_PIPELINES_MAP, TYPED_SUB_PIPELINES_MAP -> false;
+            default -> true;
+        });
     }
 
     /* ============================  save flow  ============================ */
@@ -311,7 +322,7 @@ public final class PipelineBuilderResponse {
     private @NotNull PipelineContext buildPipelineContext() {
         ExtractorStore store = this.bot.getExtractorStore();
         return PipelineContext.builder()
-            .withResolver(ExtractorResolver.of(store, PipelineContext.empty()))
+            .withResolver(ExtractorResolver.of(store, PipelineContext.defaults()))
             .withBagEntry(ExtractorResolver.BAG_CALLER_USER_ID, this.callerUserId)
             .withBagEntry(ExtractorResolver.BAG_CALLER_GUILD_ID,
                 this.callerGuildId == null ? -1L : this.callerGuildId)

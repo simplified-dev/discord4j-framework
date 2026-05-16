@@ -2,9 +2,9 @@ package dev.sbs.discordapi.feature.extractor.ui;
 
 import dev.sbs.dataflow.DataPipeline;
 import dev.sbs.dataflow.DataTypes;
-import dev.sbs.dataflow.stage.collect.FirstCollect;
 import dev.sbs.dataflow.stage.filter.dom.DomTextContainsFilter;
-import dev.sbs.dataflow.stage.source.PasteSource;
+import dev.sbs.dataflow.stage.source.LiteralSource;
+import dev.sbs.dataflow.stage.terminal.collect.FirstCollect;
 import dev.sbs.dataflow.stage.transform.dom.CssSelectTransform;
 import dev.sbs.dataflow.stage.transform.dom.NodeTextTransform;
 import dev.sbs.dataflow.stage.transform.dom.NthChildTransform;
@@ -34,7 +34,7 @@ class PipelineBuilderPageTest {
     @DisplayName("Populated wiki pipeline renders one Section per stage plus footer")
     void populatedPipeline() {
         DataPipeline pipeline = DataPipeline.builder()
-            .source(PasteSource.html("<table class='infobox'><tr><td>Dmg</td><td>500</td></tr></table>"))
+            .source(LiteralSource.rawHtml("<table class='infobox'><tr><td>Dmg</td><td>500</td></tr></table>"))
             .stage(ParseHtmlTransform.of())
             .stage(CssSelectTransform.of("table.infobox tr"))
             .stage(DomTextContainsFilter.of("Dmg"))
