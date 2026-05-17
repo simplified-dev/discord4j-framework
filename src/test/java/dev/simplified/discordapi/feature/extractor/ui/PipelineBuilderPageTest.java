@@ -2,12 +2,12 @@ package dev.simplified.discordapi.feature.extractor.ui;
 
 import dev.simplified.dataflow.DataPipeline;
 import dev.simplified.dataflow.DataTypes;
-import dev.simplified.dataflow.stage.filter.dom.DomTextContainsFilter;
+import dev.simplified.dataflow.stage.filter.dom.TextContainsFilter;
 import dev.simplified.dataflow.stage.source.LiteralSource;
 import dev.simplified.dataflow.stage.terminal.collect.FirstCollect;
 import dev.simplified.dataflow.stage.transform.dom.CssSelectTransform;
-import dev.simplified.dataflow.stage.transform.dom.DomNthChildTransform;
-import dev.simplified.dataflow.stage.transform.dom.DomTextTransform;
+import dev.simplified.dataflow.stage.transform.dom.NthChildTransform;
+import dev.simplified.dataflow.stage.transform.dom.TextTransform;
 import dev.simplified.dataflow.stage.transform.dom.ParseHtmlTransform;
 import dev.simplified.dataflow.stage.transform.primitive.ParseIntTransform;
 import dev.simplified.dataflow.stage.transform.string.RegexExtractTransform;
@@ -31,14 +31,14 @@ class PipelineBuilderPageTest {
     @Test
     @DisplayName("Populated wiki pipeline renders one Section per stage plus footer")
     void populatedPipeline() {
-        DataPipeline pipeline = DataPipeline.builder()
+        DataPipeline<?> pipeline = DataPipeline.builder()
             .source(LiteralSource.rawHtml("<table class='infobox'><tr><td>Dmg</td><td>500</td></tr></table>"))
             .stage(ParseHtmlTransform.of())
             .stage(CssSelectTransform.of("table.infobox tr"))
-            .stage(DomTextContainsFilter.of("Dmg"))
+            .stage(TextContainsFilter.of("Dmg"))
             .stage(FirstCollect.of(DataTypes.DOM_NODE))
-            .stage(DomNthChildTransform.of("td", 1))
-            .stage(DomTextTransform.of())
+            .stage(NthChildTransform.of("td", 1))
+            .stage(TextTransform.of())
             .stage(RegexExtractTransform.of("\\d+"))
             .stage(ParseIntTransform.of())
             .build();

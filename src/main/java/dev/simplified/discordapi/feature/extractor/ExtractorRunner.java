@@ -77,7 +77,7 @@ public final class ExtractorRunner {
     }
 
     private static @NotNull Result executeOne(@NotNull Extractor extractor, @NotNull Function<Extractor, PipelineContext> contextFactory) {
-        DataPipeline pipeline;
+        DataPipeline<?> pipeline;
         try {
             pipeline = extractor.pipeline();
         } catch (RuntimeException ex) {

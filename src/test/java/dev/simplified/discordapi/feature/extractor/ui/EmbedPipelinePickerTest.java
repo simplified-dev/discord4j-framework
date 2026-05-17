@@ -2,7 +2,7 @@ package dev.simplified.discordapi.feature.extractor.ui;
 
 import dev.simplified.dataflow.DataPipeline;
 import dev.simplified.dataflow.stage.source.LiteralSource;
-import dev.simplified.dataflow.stage.transform.json.JsonAsIntTransform;
+import dev.simplified.dataflow.stage.transform.json.AsIntTransform;
 import dev.simplified.dataflow.stage.transform.json.ParseJsonTransform;
 import dev.simplified.discordapi.component.interaction.SelectMenu;
 import dev.simplified.discordapi.feature.extractor.Extractor;
@@ -56,7 +56,7 @@ class EmbedPipelinePickerTest {
         row.setPipeline(DataPipeline.builder()
             .source(LiteralSource.rawJson("0"))
             .stage(ParseJsonTransform.of())
-            .stage(JsonAsIntTransform.of())
+            .stage(AsIntTransform.of())
             .build());
         return row;
     }

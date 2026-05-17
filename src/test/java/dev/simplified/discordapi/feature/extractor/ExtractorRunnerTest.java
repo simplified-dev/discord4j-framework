@@ -3,9 +3,9 @@ package dev.simplified.discordapi.feature.extractor;
 import dev.simplified.dataflow.DataPipeline;
 import dev.simplified.dataflow.PipelineContext;
 import dev.simplified.dataflow.stage.source.LiteralSource;
-import dev.simplified.dataflow.stage.transform.dom.DomTextTransform;
+import dev.simplified.dataflow.stage.transform.dom.TextTransform;
 import dev.simplified.dataflow.stage.transform.dom.ParseHtmlTransform;
-import dev.simplified.dataflow.stage.transform.json.JsonAsIntTransform;
+import dev.simplified.dataflow.stage.transform.json.AsIntTransform;
 import dev.simplified.dataflow.stage.transform.json.ParseJsonTransform;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,7 +27,7 @@ class ExtractorRunnerTest {
         row.setPipeline(DataPipeline.builder()
             .source(LiteralSource.rawJson("42"))
             .stage(ParseJsonTransform.of())
-            .stage(JsonAsIntTransform.of())
+            .stage(AsIntTransform.of())
             .build());
         store.save(row).block();
 
@@ -107,7 +107,7 @@ class ExtractorRunnerTest {
         row.setPipeline(DataPipeline.builder()
             .source(LiteralSource.rawHtml("<p>hi</p>"))
             .stage(ParseHtmlTransform.of())
-            .stage(DomTextTransform.of())
+            .stage(TextTransform.of())
             .build());
         store.save(row).block();
 

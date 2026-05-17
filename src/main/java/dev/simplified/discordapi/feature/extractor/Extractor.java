@@ -63,7 +63,7 @@ public final class Extractor {
      *
      * @return the rebuilt pipeline
      */
-    public @NotNull DataPipeline pipeline() {
+    public @NotNull DataPipeline<?> pipeline() {
         return PipelineGson.fromJson(this.definitionJson);
     }
 
@@ -72,7 +72,7 @@ public final class Extractor {
      *
      * @param pipeline the pipeline to persist
      */
-    public void setPipeline(@NotNull DataPipeline pipeline) {
+    public void setPipeline(@NotNull DataPipeline<?> pipeline) {
         this.definitionJson = PipelineGson.toJson(pipeline);
     }
 

@@ -1,7 +1,7 @@
 package dev.simplified.discordapi.feature.extractor.ui;
 
 import dev.simplified.dataflow.stage.filter.numeric.IntGreaterThanFilter;
-import dev.simplified.dataflow.stage.filter.string.StringContainsFilter;
+import dev.simplified.dataflow.stage.filter.string.ContainsFilter;
 import dev.simplified.dataflow.stage.terminal.collect.ListCollect;
 import dev.simplified.dataflow.stage.transform.dom.ParseHtmlTransform;
 import org.junit.jupiter.api.DisplayName;
@@ -18,7 +18,7 @@ class StageConfigParserTest {
     @DisplayName("STRING field roundtrips")
     void stringField() {
         StageConfigParser.StageResult result = StageConfigParser.parseAndBuild(
-            StringContainsFilter.class,
+            ContainsFilter.class,
             Map.of("needle", "Dmg")
         );
         assertThat(result.ok(), is(true));

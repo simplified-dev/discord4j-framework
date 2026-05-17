@@ -54,7 +54,7 @@ public final class ExtractorResolver implements DataPipelineResolver {
 
     /** {@inheritDoc} */
     @Override
-    public @NotNull Optional<DataPipeline> resolve(@NotNull String id) {
+    public @NotNull Optional<DataPipeline<?>> resolve(@NotNull String id) {
         Long userId = (Long) this.ctx.bag().get(BAG_CALLER_USER_ID);
         if (userId == null) return Optional.empty();
         Long guildId = (Long) this.ctx.bag().get(BAG_CALLER_GUILD_ID);
@@ -72,7 +72,7 @@ public final class ExtractorResolver implements DataPipelineResolver {
 
     /** {@inheritDoc} */
     @Override
-    public @Nullable String idOf(@NotNull DataPipeline pipeline) {
+    public @Nullable String idOf(@NotNull DataPipeline<?> pipeline) {
         // Transient pipelines built in-process do not carry an id; only persisted Extractors do.
         // The resolver does not own a reverse map - cycle detection on transient pipelines is
         // impossible and intentionally so.

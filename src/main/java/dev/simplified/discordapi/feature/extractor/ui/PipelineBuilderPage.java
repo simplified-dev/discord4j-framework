@@ -137,7 +137,7 @@ public final class PipelineBuilderPage {
         Container.Builder container = Container.builder();
         container.withComponents(TextDisplay.of(titleLine(state)), Separator.small());
 
-        DataPipeline pipeline = state.pipeline();
+        DataPipeline<?> pipeline = state.pipeline();
         for (int i = 0; i < pipeline.stages().size(); i++) {
             Stage<?, ?> stage = pipeline.stages().get(i);
             container.withComponents(StageSection.of(i, stage, onEditStage));

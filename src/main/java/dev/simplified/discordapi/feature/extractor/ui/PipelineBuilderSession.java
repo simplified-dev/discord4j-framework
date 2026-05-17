@@ -112,7 +112,7 @@ public final class PipelineBuilderSession {
         if (!result.ok())
             return this.stateRef.updateAndGet(s -> s.toBuilder().banner(result.error()).build());
         return this.stateRef.updateAndGet(s -> {
-            DataPipeline current = s.pipeline();
+            DataPipeline<?> current = s.pipeline();
             if (index < 0 || index >= current.stages().size())
                 return s.toBuilder().banner("No such stage #" + index).build();
             try {
@@ -135,7 +135,7 @@ public final class PipelineBuilderSession {
      */
     public @NotNull PipelineBuilderState removeStage(int index) {
         return this.stateRef.updateAndGet(s -> {
-            DataPipeline current = s.pipeline();
+            DataPipeline<?> current = s.pipeline();
             if (index < 0 || index >= current.stages().size())
                 return s.toBuilder().banner("No such stage #" + index).build();
             try {
@@ -214,7 +214,7 @@ public final class PipelineBuilderSession {
      * @return the new state after the run attempt
      */
     public @NotNull PipelineBuilderState runPipeline(@NotNull PipelineContext ctx) {
-        DataPipeline pipeline = this.stateRef.get().pipeline();
+        DataPipeline<?> pipeline = this.stateRef.get().pipeline();
         ValidationReport report = pipeline.validate();
         if (!report.isValid())
             return this.stateRef.updateAndGet(s -> s.toBuilder()
@@ -322,7 +322,7 @@ public final class PipelineBuilderSession {
      * @return the new state after the mutation attempt
      */
     public @NotNull PipelineBuilderState appendEmbedStage(@NotNull Extractor extractor) {
-        DataPipeline inner;
+        DataPipeline<?> inner;
         try {
             inner = extractor.pipeline();
         } catch (RuntimeException ex) {
@@ -463,7 +463,7 @@ public final class PipelineBuilderSession {
 
     private @NotNull PipelineBuilderState mutateBranch(int branchIndex, @NotNull java.util.function.Function<MapCollect<?>, BranchMutation> mutator) {
         return this.stateRef.updateAndGet(s -> {
-            DataPipeline current = s.pipeline();
+            DataPipeline<?> current = s.pipeline();
             if (branchIndex < 0 || branchIndex >= current.stages().size())
                 return s.toBuilder().banner("No such stage #" + branchIndex).build();
             Stage<?, ?> stage = current.stages().get(branchIndex);
@@ -484,9 +484,9 @@ public final class PipelineBuilderSession {
         });
     }
 
-    private static @NotNull LinkedHashMap<String, List<Stage<?, ?>>> copyOutputs(@NotNull NamedChains outputs) {
+    private static @NotNull LinkedHashMap<String, List<Stage<?, ?>>> copyOutputs(@NotNull NamedChains<?> outputs) {
         LinkedHashMap<String, List<Stage<?, ?>>> copy = new LinkedHashMap<>();
-        for (Map.Entry<String, Chain> entry : outputs.chains().entrySet())
+        for (var entry : outputs.chains().entrySet())
             copy.put(entry.getKey(), new java.util.ArrayList<>(entry.getValue().stages()));
         return copy;
     }
@@ -497,47 +497,46 @@ public final class PipelineBuilderSession {
         for (Map.Entry<String, List<Stage<?, ?>>> entry : outputs.entrySet()) {
             List<Stage<?, ?>> stages = entry.getValue();
             b.output(entry.getKey(), chain -> {
-                for (Stage<?, ?> s : stages) chain.stage(s);
+                for (Stage<?, ?> s : stages) ((dev.simplified.dataflow.chain.ChainBuilder) chain).stage(s);
             });
         }
         return b.build();
     }
 
-    private static @NotNull DataPipeline rebuildAppending(@NotNull DataPipeline current, @NotNull Stage<?, ?> appended) {
-        DataPipeline.Builder b = DataPipeline.builder();
-        boolean first = true;
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private static @NotNull DataPipeline<?> rebuildAppending(@NotNull DataPipeline<?> current, @NotNull Stage<?, ?> appended) {
+        DataPipeline.SourcelessBuilder sb = DataPipeline.builder();
+        DataPipeline.Builder b = null;
         for (Stage<?, ?> s : current.stages()) {
-            if (first) {
-                b.source((SourceStage<?>) s);
-                first = false;
-            } else b.stage(s);
+            if (b == null) b = sb.source((SourceStage<?>) s);
+            else b = b.stage(s);
         }
-        if (first) b.source((SourceStage<?>) appended);
-        else b.stage(appended);
+        if (b == null) b = sb.source((SourceStage<?>) appended);
+        else b = b.stage(appended);
         return b.build();
     }
 
-    @SuppressWarnings("unchecked")
-    private static @NotNull DataPipeline rebuildReplacing(@NotNull DataPipeline current, int index, @NotNull Stage<?, ?> replacement) {
-        DataPipeline.Builder b = DataPipeline.builder();
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private static @NotNull DataPipeline<?> rebuildReplacing(@NotNull DataPipeline<?> current, int index, @NotNull Stage<?, ?> replacement) {
+        DataPipeline.SourcelessBuilder sb = DataPipeline.builder();
+        DataPipeline.Builder b = null;
         for (int i = 0; i < current.stages().size(); i++) {
             Stage<?, ?> s = i == index ? replacement : current.stages().get(i);
-            if (i == 0) b.source((SourceStage<?>) s);
-            else b.stage(s);
+            if (i == 0) b = sb.source((SourceStage<?>) s);
+            else b = b.stage(s);
         }
         return b.build();
     }
 
-    private static @NotNull DataPipeline rebuildOmitting(@NotNull DataPipeline current, int index) {
-        DataPipeline.Builder b = DataPipeline.builder();
-        boolean first = true;
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private static @NotNull DataPipeline<?> rebuildOmitting(@NotNull DataPipeline<?> current, int index) {
+        DataPipeline.SourcelessBuilder sb = DataPipeline.builder();
+        DataPipeline.Builder b = null;
         for (int i = 0; i < current.stages().size(); i++) {
             if (i == index) continue;
             Stage<?, ?> s = current.stages().get(i);
-            if (first) {
-                b.source((SourceStage<?>) s);
-                first = false;
-            } else b.stage(s);
+            if (b == null) b = sb.source((SourceStage<?>) s);
+            else b = b.stage(s);
         }
         return b.build();
     }

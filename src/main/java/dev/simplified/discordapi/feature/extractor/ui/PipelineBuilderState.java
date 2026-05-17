@@ -28,7 +28,7 @@ import org.jetbrains.annotations.Nullable;
 @Accessors(fluent = true)
 public final class PipelineBuilderState {
 
-    private final @NotNull DataPipeline pipeline;
+    private final @NotNull DataPipeline<?> pipeline;
     private final @NotNull String label;
     private final @NotNull String shortId;
     private final @Nullable Extractor backingRow;
