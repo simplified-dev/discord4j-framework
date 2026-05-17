@@ -41,7 +41,7 @@ dependencies {
     api("com.github.simplified-dev:scheduler") { version { strictly("f9b1bd4") } }
     api("com.github.simplified-dev:yaml") { version { strictly("586bc52") } }
     api("com.github.simplified-dev:client") { version { strictly("47d3c2f") } }
-    api("com.github.simplified-dev:dataflow") { version { strictly("ec9b4ac") } }
+    api("com.github.simplified-dev:dataflow") { version { strictly("448c6be") } }
 
     implementation(libs.sentry)
 }

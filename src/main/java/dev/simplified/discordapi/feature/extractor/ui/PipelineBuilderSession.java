@@ -505,7 +505,7 @@ public final class PipelineBuilderSession {
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private static @NotNull DataPipeline<?> rebuildAppending(@NotNull DataPipeline<?> current, @NotNull Stage<?, ?> appended) {
-        DataPipeline.SourcelessBuilder sb = DataPipeline.builder();
+        DataPipeline.Origin sb = DataPipeline.builder();
         DataPipeline.Builder b = null;
         for (Stage<?, ?> s : current.stages()) {
             if (b == null) b = sb.source((SourceStage<?>) s);
@@ -518,7 +518,7 @@ public final class PipelineBuilderSession {
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private static @NotNull DataPipeline<?> rebuildReplacing(@NotNull DataPipeline<?> current, int index, @NotNull Stage<?, ?> replacement) {
-        DataPipeline.SourcelessBuilder sb = DataPipeline.builder();
+        DataPipeline.Origin sb = DataPipeline.builder();
         DataPipeline.Builder b = null;
         for (int i = 0; i < current.stages().size(); i++) {
             Stage<?, ?> s = i == index ? replacement : current.stages().get(i);
@@ -530,7 +530,7 @@ public final class PipelineBuilderSession {
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private static @NotNull DataPipeline<?> rebuildOmitting(@NotNull DataPipeline<?> current, int index) {
-        DataPipeline.SourcelessBuilder sb = DataPipeline.builder();
+        DataPipeline.Origin sb = DataPipeline.builder();
         DataPipeline.Builder b = null;
         for (int i = 0; i < current.stages().size(); i++) {
             if (i == index) continue;
